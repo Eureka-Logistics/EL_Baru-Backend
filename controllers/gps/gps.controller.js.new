@@ -1,0 +1,459 @@
+const gpsService = require('../../services/gpsApiServices');
+const core = require('../../config/core.config')
+const { detectLongStops } = require('../../services/detectStops');
+const db = require("../../config/db.config");
+const models = core.models();
+const moment = require("moment");
+
+const nomorPlatList = [
+  "B 9586 TEU",
+  "B 9107 BEV",
+  "B 9642 BEU",
+  "B 9689 BEU",
+  "B 9114 BEV",
+  "B 9008 BEV",
+  "B 9103 BEV",
+  "B 9961 BEU",
+  "B 9959 BEU",
+  "N 9038 UF",
+  "N 9047 UF",
+  "B 9581 TEU",
+  "B 9956 BEU",
+  "B 9322 BEV",
+  "B 9288 BXU",
+  "B 9110 BEV",
+  "B 9002 BEV",
+  "B 9645 BEU",
+  "B 9997 BEU",
+  "B 9105 BEV",
+  "B 9007 BEV",
+  "B 9984 BEU",
+  "B 9112 BEV",
+  "B 9587 BEU",
+  "B 9408 BEV",
+  "B 9409 BEV",
+  "B 9410 BEV",
+  "B 9411 BEV",
+  "B 9412 BEV",
+  "B 9506 BEV",
+  "B 9507 BEV",
+  "B 9508 BEV",
+  "B 9509 BEV",
+  "B 9510 BEV",
+  "B 9010 BEV",
+  "B 9814 BRV",
+  "B 9011 BEV",
+  "B 9006 BEV",
+  "N 9382 UF",
+  "N 9379 UF",
+  "N 9050 UG",
+  "B 9989 BEU",
+  "B 9644 BEU"
+];
+
+const flatten = (data) => {
+  if (Array.isArray(data) && data.length === 1 && Array.isArray(data[0])) {
+    return data[0];
+  }
+  return data;
+};
+
+async function getVehicleId({ source, deviceName, plateNo }) {
+  console.log('device_name:', deviceName);
+  console.log('plateNo:', plateNo);
+
+  if (source === 'gps_kit' && deviceName) {
+    const kendaraan = await models.kendaraan.findOne({
+      where: { gps_device_id: deviceName }
+    });
+    return kendaraan?.id || null;
+  }
+
+  if (source === 'margono' && plateNo) {
+    const kendaraan = await models.kendaraan.findOne({
+      where: { no_polisi: plateNo }
+    });
+    return kendaraan?.id || null;
+  }
+
+  return null;
+}
+
+async function getPlatNomorFromDevice(deviceName) {
+  if (!deviceName) return '';
+  const kendaraan = await models.kendaraan.findOne({
+    where: { gps_device_id: deviceName },
+    attributes: ['no_polisi']
+  });
+  return kendaraan?.no_polisi || '';
+}
+
+exports.getCombinedHistory = async (req, res) => {
+  const { device_name, plateNo, start_time, end_time } = req.query;
+
+  if (!device_name || !plateNo || !start_time || !end_time) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      message: 'device_name, plateNo, start_time, and end_time are required'
+    });
+  }
+
+  try {
+    const gpsRaw = await gpsService.fetchDeviceHistoryData(device_name, start_time, end_time);
+    const gpsFlattened = flatten(gpsRaw);
+
+    const gpsData = Array.isArray(gpsFlattened)
+      ? gpsFlattened.map(item => ({
+          datetime: item.datetime || item.time || item.date || '',
+          mileage: item.mileage || 0,
+          heading: item.heading || 0,
+          speed: item.speed || 0,
+          longitude: item.longitude || 0,
+          latitude: item.latitude || 0,
+          acc: item.acc ? 1 : 0,
+          event_message: item.event_message || '',
+          fuel1_volume: item.fuel1_volume || 0,
+          fuel2_volume: item.fuel2_volume || 0,
+          temperature: item.temperature || 0,
+          geoName: item.geoName || '',
+          source: 'gps_kit',
+          deviceName: device_name // ✅ tambahkan ini
+        }))
+      : [];
+
+    const margonoRaw = await gpsService.getHistoryLocation(plateNo, start_time, end_time);
+    const margonoData = Array.isArray(margonoRaw?.Data)
+      ? margonoRaw.Data.map(item => ({
+          datetime: item.Time || '',
+          mileage: Math.round((item.Miles || 0) / 1000),
+          heading: item.Angle || 0,
+          speed: item.Velocity || 0,
+          longitude: item.Longitude || 0,
+          latitude: item.Latitude || 0,
+          acc: item.Locate ? 1 : 0,
+          event_message: item.Alarm?.toString() || '',
+          fuel1_volume: item.Oil || 0,
+          fuel2_volume: item.LevelNum || 0,
+          temperature: item.Temperature || 0,
+          geoName: '',
+          source: 'margono'
+        }))
+      : [];
+
+    const combined = [...gpsData, ...margonoData].filter(item => item.datetime);
+    combined.sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
+
+    // Detect overhour (kendaraan berhenti > 3 jam)==================================================================>
+    const longStops = detectLongStops(combined).filter(stop => parseFloat(stop.duration_hours) >= 3);
+
+    for (const stop of longStops) {
+      const vehicleId = await getVehicleId({
+        source: stop.source,
+        deviceName: stop.deviceName,
+        plateNo: plateNo
+      });
+
+      if (!vehicleId) {
+        console.warn(`[SKIP] Tidak ditemukan vehicle_id untuk ${stop.source === 'gps_kit' ? stop.deviceName : plateNo}`);
+        continue;
+      }
+
+      try {
+        await db.query(`
+          INSERT INTO gps_event_logs (
+            vehicle_id, device_name, plat_nomor, geo_name, latitude, longitude,
+            event_type, from_time, to_time, duration_hours,
+            speed, speed_limit
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          vehicleId,
+          stop.deviceName || '',
+          stop.source === 'gps_kit'
+            ? await getPlatNomorFromDevice(stop.deviceName)
+            : plateNo,
+          stop.geoName || '',
+          stop.latitude || 0,
+          stop.longitude || 0,
+          'overhour',
+          stop.from,
+          stop.to,
+          parseFloat(stop.duration_hours),
+          0,
+          0
+        ]);
+        console.log(`[INSERTED] overhour event from ${stop.from} to ${stop.to}`);
+      } catch (insertErr) {
+        console.error('[ERROR] Insert failed (overhour):', insertErr.message);
+      }
+    }
+    //==============================================================================================>
+    const result = [];
+    for (const item of combined) {
+      result.push(item);
+
+     if (item.speed > 60) {
+        const vehicleId = await getVehicleId({
+          source: item.source,
+          deviceName: item.deviceName,
+          plateNo: plateNo
+        });
+
+        if (!vehicleId) {
+          console.warn(`[SKIP] Tidak ditemukan vehicle_id untuk ${item.source === 'gps_kit' ? item.deviceName : plateNo}`);
+          continue;
+        }
+
+        try {
+          await db.query(`
+            INSERT INTO gps_event_logs (
+              vehicle_id, device_name, plat_nomor, geo_name, latitude, longitude,
+              event_type, from_time, to_time, duration_hours,
+              speed, speed_limit
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `, [
+            vehicleId,
+            item.deviceName || '',
+            item.source === 'gps_kit'
+              ? await getPlatNomorFromDevice(item.deviceName)
+              : plateNo,
+            item.geoName || '',
+            item.latitude || 0,
+            item.longitude || 0,
+            'overspeed',
+            item.datetime,
+            item.datetime,
+            0,
+            item.speed,
+            60
+          ]);
+          console.log(`[INSERTED] overspeed event at ${item.datetime}`);
+        } catch (insertErr) {
+          console.error('[ERROR] Insert failed:', insertErr.message);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: 200,
+      total: result.length,
+      data: result
+    });
+  } catch (error) {
+    console.error('[ERROR] getCombinedHistory:', error);
+    return res.status(500).json({
+      success: false,
+      status: 500,
+      message: 'Failed to fetch combined history',
+      error: error.message
+    });
+  }
+};
+
+exports.getCombinedLastPosition = async (req, res) => {
+  try {
+    const combinedResults = [];
+
+    try {
+      const totalKilatData = await gpsService.fetchLatestVehiclePosition();
+      const dataTotalKilat = Array.isArray(totalKilatData) ? totalKilatData : (totalKilatData?.data || []);
+      const flattened = dataTotalKilat.flat();
+
+      const formattedTotalKilat = flattened.map(item => ({
+        plateNo: item.vehicleName || '',
+        deviceName: item.deviceName || '',
+        datetime: item.datetime || '',
+        mileage: item.mileage || 0,
+        heading: item.heading || 0,
+        speed: item.speed || 0,
+        longitude: item.longitude || 0,
+        latitude: item.latitude || 0,
+        acc: item.acc || 0,
+        event_message: item.event_message || '',
+        geoName: item.geoName || '',
+        source: 'gps_kit'
+      }));
+
+      combinedResults.push(...formattedTotalKilat);
+    } catch (err) {
+      console.error("[ERROR] Fetch Total Kilat:", err.message);
+    }
+
+    for (const plateNo of nomorPlatList) {
+      try {
+        const response = await gpsService.lastPositionMargono(plateNo);
+        console.log(`[DEBUG MARGONO] ${plateNo}:`, JSON.stringify(response));
+
+        const item = response;
+
+        if (item && item.Latitude && item.Longitude) {
+          const normalized = {
+            plateNo: item.Vehnof || plateNo,
+            deviceName: "",
+            datetime: "",
+            mileage: parseFloat(item.Mileage || "0") / 1000,
+            heading: 0,
+            speed: parseFloat(item.Speed || "0"),
+            longitude: parseFloat(item.Longitude || "0"),
+            latitude: parseFloat(item.Latitude || "0"),
+            acc: item.AccStatus === "ON" ? 1 : 0,
+            event_message: "",
+            geoName: "",
+            source: "margono"
+          };
+
+          combinedResults.push(normalized);
+        } else {
+          console.warn(`[SKIP] Tidak ada data posisi untuk ${plateNo}`);
+        }
+      } catch (err) {
+        console.error(`[MARGONO ERROR] plateNo: ${plateNo}`, err.message);
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      status: 200,
+      total: combinedResults.length,
+      data: combinedResults
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      status: 500,
+      message: 'Failed to fetch combined last position',
+      error: error.message
+    });
+  }
+};
+
+exports.getGpsEventLogs = async (req, res) => {
+  const { start_time, end_time } = req.query;
+
+  if (!start_time || !end_time) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      message: 'start_time and end_time are required',
+    });
+  }
+
+  try {
+    const [rows] = await db.query(
+      `SELECT *
+       FROM gps_event_logs
+       WHERE event_type = 'overspeed'
+         AND from_time BETWEEN ? AND ?
+       ORDER BY from_time ASC`,
+      [start_time, end_time]
+    );
+
+    if (!rows || rows.length === 0) {
+      return res.status(200).json({
+        success: true,
+        status: 200,
+        message: `Data kosong pada rentang waktu ${start_time} sampai ${end_time}`,
+        total: 0,
+        data: [],
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: 200,
+      total: rows.length,
+      data: rows,
+    });
+
+  } catch (error) {
+    console.error('[ERROR] getOverspeedData:', error);
+    return res.status(500).json({
+      success: false,
+      status: 500,
+      message: 'Failed to fetch overspeed data from gps_event_logs',
+      error: error.message,
+    });
+  }
+};
+
+exports.getOverspeedData = async (req, res) => {
+  const { start_time, end_time } = req.query;
+
+  if (!start_time || !end_time) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      message: 'start_time and end_time are required',
+    });
+  }
+
+  try {
+    const rows = await db.query(
+      `SELECT * FROM gps_overspeed 
+       WHERE datetime BETWEEN ? AND ?
+       ORDER BY datetime ASC`,
+      [start_time, end_time]
+    );
+
+    console.log("DEBUG typeof rows:", typeof rows);
+    console.log("DEBUG rows:", rows);
+    console.log("DEBUG Array.isArray(rows):", Array.isArray(rows));
+
+    return res.status(200).json({
+      success: true,
+      status: 200,
+      total: rows.length,
+      data: rows,
+    });
+
+  } catch (error) {
+    console.error('[ERROR] getOverspeedData:', error);
+    return res.status(500).json({
+      success: false,
+      status: 500,
+      message: 'Failed to fetch overspeed data',
+      error: error.message,
+    });
+  }
+};
+
+exports.getOverHourVehicles = async (req, res) => {
+  const { start_time, end_time } = req.query;
+
+  if (!start_time || !end_time) {
+    return res.status(400).json({
+      success: false,
+      status: 400,
+      message: 'start_time and end_time are required',
+    });
+  }
+
+  try {
+    const rows = await db.query(
+      `SELECT id, device_name, geo_name, latitude, longitude, from_time, to_time, duration_hours, notified, created_at 
+       FROM stationary_logs 
+       WHERE duration_hours >= 3 
+         AND to_time BETWEEN ? AND ?
+       ORDER BY to_time DESC`,
+      [start_time, end_time]
+    );
+
+    return res.status(200).json({
+      success: true,
+      status: 200,
+      total: rows.length,
+      data: rows,
+    });
+
+  } catch (error) {
+    console.error('[ERROR] getOverHourVehicles:', error);
+    return res.status(500).json({
+      success: false,
+      status: 500,
+      message: 'Failed to fetch over hour vehicles',
+      error: error.message,
+    });
+  }
+};
+
