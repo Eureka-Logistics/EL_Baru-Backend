@@ -20,7 +20,12 @@ exports.validate = (method) => {
                     .withMessage(`Password Tidak Boleh Kosong`)
                     .custom(async (pass, { req }) => {
                         const { username, password } = req.body
-                        let query = await db.query(`SELECT * FROM users WHERE LOWER(username) = '${username}'  AND password = MD5('${password}') AND perusahaan = 'LOG'`)
+                        let query = await db.query(
+                        `SELECT * FROM users 
+                        WHERE LOWER(username) = ? 
+                        AND password = MD5(?)`,
+                        [username.toLowerCase(), password]
+                        );
                         const validate = Boolean(query.length)
                         if (!validate) {
                             throw new SyntaxError('Email Atau Password Salah atau Akun Tidak Terdaftar di Perusahaan EUREKA LOGISTICS')

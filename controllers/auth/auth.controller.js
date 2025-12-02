@@ -29,7 +29,7 @@ exports.login = async (req, res) => {
             const user = await models.users.findOne({
                 where: {
                     username: username,
-                    perusahaan: 'LOG'
+                    // perusahaan: 'LOG'
                 }
             });
 
