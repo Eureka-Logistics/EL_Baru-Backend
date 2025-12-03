@@ -1,0 +1,302 @@
+{
+	"info": {
+		"_postman_id": "uang-jalan-ptj-collection",
+		"name": "Uang Jalan PTJ API",
+		"description": "Collection untuk testing CRUD Uang Jalan PTJ",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Get All PTJ",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj?page=1&limit=10",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "limit",
+							"value": "10"
+						},
+						{
+							"key": "id_uang_jalan",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "id_user",
+							"value": "",
+							"disabled": true
+						},
+						{
+							"key": "id_user_ops",
+							"value": "",
+							"disabled": true
+						}
+					]
+				},
+				"description": "Get all PTJ with pagination and optional filters"
+			},
+			"response": []
+		},
+		{
+			"name": "Get PTJ by ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj-detail?id_uj_ptj=1",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj-detail"
+					],
+					"query": [
+						{
+							"key": "id_uj_ptj",
+							"value": "1"
+						}
+					]
+				},
+				"description": "Get PTJ detail by ID"
+			},
+			"response": []
+		},
+		{
+			"name": "Create PTJ",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"id_uang_jalan\": 100,\n  \"bbm_img\": \"bbm_image.jpg\",\n  \"bbm_value\": 200000,\n  \"makan_img\": \"makan_image.jpg\",\n  \"makan_value\": 150000,\n  \"parkir_img\": \"parkir_image.jpg\",\n  \"parkir_value\": 20000,\n  \"tol_img\": \"tol_image.jpg\",\n  \"tol_value\": 75000,\n  \"tkbm_img\": \"tkbm_image.jpg\",\n  \"tkm_value\": 50000,\n  \"penyeberangan_img\": \"penyeberangan_image.jpg\",\n  \"penyeberangan_value\": 100000,\n  \"overtonase_img\": \"overtonase_image.jpg\",\n  \"overtonase_value\": 300000,\n  \"timbangan_img\": \"timbangan_image.jpg\",\n  \"timbangan_value\": 80000,\n  \"pass_bandara_img\": \"bandara_image.jpg\",\n  \"pass_bandara_value\": 200000,\n  \"karantina_img\": \"karantina_image.jpg\",\n  \"karantina_value\": 50000,\n  \"kawalan_img\": \"kawalan_image.jpg\",\n  \"kawalan_value\": 100000,\n  \"user_name\": \"Test User\",\n  \"id_user_ops\": 1,\n  \"ops_name\": \"Operations Manager\",\n  \"ops_apv\": \"Approved\",\n  \"ops_date\": \"2025-12-03 11:00:00\",\n  \"id_user_finance\": 5,\n  \"finance_apv\": \"Approved\",\n  \"finance_name\": \"Finance Manager\",\n  \"finance_date\": \"2025-12-03 14:00:00\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					]
+				},
+				"description": "Create new PTJ record"
+			},
+			"response": []
+		},
+		{
+			"name": "Create PTJ (Minimal)",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"id_uang_jalan\": 100,\n  \"makan_value\": 150000,\n  \"tol_value\": 75000,\n  \"kawalan_value\": 100000\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					]
+				},
+				"description": "Create new PTJ with minimal required fields"
+			},
+			"response": []
+		},
+		{
+			"name": "Update PTJ",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"id_uang_jalan\": 100,\n  \"bbm_img\": \"bbm_image_updated.jpg\",\n  \"bbm_value\": 220000,\n  \"makan_img\": \"makan_image_updated.jpg\",\n  \"makan_value\": 175000,\n  \"parkir_img\": \"parkir_image_updated.jpg\",\n  \"parkir_value\": 25000,\n  \"tol_img\": \"tol_image_updated.jpg\",\n  \"tol_value\": 80000,\n  \"tkbm_img\": \"tkbm_image_updated.jpg\",\n  \"tkm_value\": 60000,\n  \"penyeberangan_img\": \"penyeberangan_image_updated.jpg\",\n  \"penyeberangan_value\": 110000,\n  \"overtonase_img\": \"overtonase_image_updated.jpg\",\n  \"overtonase_value\": 350000,\n  \"timbangan_img\": \"timbangan_image_updated.jpg\",\n  \"timbangan_value\": 90000,\n  \"pass_bandara_img\": \"bandara_image_updated.jpg\",\n  \"pass_bandara_value\": 220000,\n  \"karantina_img\": \"karantina_image_updated.jpg\",\n  \"karantina_value\": 60000,\n  \"kawalan_img\": \"kawalan_image_updated.jpg\",\n  \"kawalan_value\": 110000,\n  \"user_name\": \"Test User Updated\",\n  \"id_user_ops\": 1,\n  \"ops_name\": \"Operations Manager Updated\",\n  \"ops_apv\": \"Revised\",\n  \"ops_date\": \"2025-12-03 16:00:00\",\n  \"id_user_finance\": 5,\n  \"finance_apv\": \"Revised\",\n  \"finance_name\": \"Finance Manager Updated\",\n  \"finance_date\": \"2025-12-03 17:00:00\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj?id_uj_ptj=1",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					],
+					"query": [
+						{
+							"key": "id_uj_ptj",
+							"value": "1"
+						}
+					]
+				},
+				"description": "Update existing PTJ record"
+			},
+			"response": []
+		},
+		{
+			"name": "Update PTJ (Partial)",
+			"request": {
+				"method": "PUT",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"tol_value\": 90000,\n  \"makan_value\": 200000,\n  \"kawalan_value\": 120000,\n  \"ops_apv\": \"Updated Status\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj?id_uj_ptj=1",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					],
+					"query": [
+						{
+							"key": "id_uj_ptj",
+							"value": "1"
+						}
+					]
+				},
+				"description": "Partial update - only update specific fields"
+			},
+			"response": []
+		},
+		{
+			"name": "Delete PTJ",
+			"request": {
+				"method": "DELETE",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Bearer {{token}}",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "{{base_url}}/uang_jalan_ptj/ptj?id_uj_ptj=1",
+					"host": [
+						"{{base_url}}"
+					],
+					"path": [
+						"uang_jalan_ptj",
+						"ptj"
+					],
+					"query": [
+						{
+							"key": "id_uj_ptj",
+							"value": "1"
+						}
+					]
+				},
+				"description": "Delete PTJ by ID"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "base_url",
+			"value": "http://localhost:3000",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "your_jwt_token_here",
+			"type": "string"
+		}
+	]
+}
