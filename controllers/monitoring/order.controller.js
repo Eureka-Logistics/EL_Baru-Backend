@@ -366,7 +366,7 @@ exports.exportExcelUnlimited = async (req, res) => {
 
 exports.getMonitoringSJList = async (req, res) => {
   try {
-    const { mulai, selesai, bu, limit, page, vendor, brench } = req.query;
+    const { mulai, selesai, bu, limit, page, vendor, brench, nopol } = req.query;
 
     if (!mulai || !selesai) {
       return res.status(400).json({
@@ -449,6 +449,10 @@ exports.getMonitoringSJList = async (req, res) => {
       sql += " AND a.id_mitra_pickup = ?";
       params.push(vendor);
     }
+    if (nopol) {
+      sql += " AND a.pickup_nopol LIKE ?";
+      params.push(`%${nopol}%`);
+    }
 
     sql += " GROUP BY a.id_msm ORDER BY a.id_msm DESC LIMIT ? OFFSET ?";
     params.push(pageSize, offset);
@@ -477,9 +481,9 @@ exports.getMonitoringSJList = async (req, res) => {
         ${bu ? ' AND a.id_bu = ?' : ''}
         ${brench ? ' AND t.id_bu_brench = ?' : ''}
         ${vendor ? ' AND a.id_mitra_pickup = ?' : ''}
+        ${nopol ? ' AND a.pickup_nopol LIKE ?' : ''}
     `;
-
-    const countParams = [mulai, selesai, ...(bu ? [bu] : []), ...(brench ? [brench] : []), ...(vendor ? [vendor] : [])];
+    const countParams = [mulai, selesai, ...(bu ? [bu] : []), ...(brench ? [brench] : []), ...(vendor ? [vendor] : []), ...(nopol ? [`%${nopol}%`] : [])];
     const countRows = await db.query(countSql, countParams);
     const total = countRows?.[0]?.total ? Number(countRows[0].total) : 0;
 
@@ -840,7 +844,7 @@ exports.submitSerahkanSJ = async (req, res) => {
 
 exports.getMonitoringHistoryReceive = async (req, res) => {
   try {
-    const { mulai, selesai, limit, page, bu, brench, mitra, user } = req.query;
+    const { mulai, selesai, limit, page, bu, brench, mitra, user, nopol } = req.query;
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
     const offset = (pageNum - 1) * pageSize;
@@ -886,6 +890,10 @@ exports.getMonitoringHistoryReceive = async (req, res) => {
       sql += ` AND f.nama_lengkap LIKE ?`;
       params.push(`%${user}%`);
     }
+    if (nopol) {
+      sql += ` AND b.nopol LIKE ?`;
+      params.push(`%${nopol}%`);
+    }
 
     sql += ` GROUP BY a.id_sm_receive ORDER BY a.id_sm_receive DESC LIMIT ? OFFSET ?`;
     params.push(pageSize, offset);
@@ -909,13 +917,15 @@ exports.getMonitoringHistoryReceive = async (req, res) => {
       ${brench ? ' AND s.id_bu_brench = ?' : ''}
       ${mitra ? ' AND e.nama_perusahaan LIKE ?' : ''}
       ${user ? ' AND f.nama_lengkap LIKE ?' : ''}
+      ${nopol ? ' AND b.nopol LIKE ?' : ''}
     `;
     const countParams = [
       ...(mulai && selesai ? [mulai, selesai] : []),
       ...(bu ? [bu] : []),
       ...(brench ? [brench] : []),
       ...(mitra ? [`%${mitra}%`] : []),
-      ...(user ? [`%${user}%`] : [])
+      ...(user ? [`%${user}%`] : []),
+      ...(nopol ? [`%${nopol}%`] : [])
     ];
     const totalRows = await db.query(countSql, countParams);
     const total = totalRows?.[0]?.total ? Number(totalRows[0].total) : 0;
@@ -925,6 +935,56 @@ exports.getMonitoringHistoryReceive = async (req, res) => {
       data: rows,
       total_data: total,
       pagination: { page: pageNum, limit: pageSize, count: rows.length, total }
+    });
+  } catch (error) {
+    return res.status(500).json({ status: { code: 500, message: error.message } });
+  }
+}
+
+exports.printSerahkanSJ = async (req, res) => {
+  try {
+    const group = req.query.group;
+    if (!group) {
+      return res.status(400).json({ status: { code: 400, message: 'group wajib diisi' } });
+    }
+
+    const ids = String(group)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (ids.length === 0) {
+      return res.status(400).json({ status: { code: 400, message: 'Daftar id_sm_receive tidak valid' } });
+    }
+
+    const placeholders = ids.map(() => '?').join(',');
+    const sql = `
+      SELECT 
+        a.*, 
+        b.msm, 
+        d.msp, 
+        e.nama_perusahaan, 
+        f.nama_lengkap, 
+        g.kota as kota_muat, 
+        h.kota as kota_bongkar 
+      FROM m_sm_receive a 
+      INNER JOIN m_sm b ON b.id_msm = a.id_msm 
+      INNER JOIN m_pengadaan_detail c ON c.id_mpd = b.id_mpd 
+      LEFT JOIN alamat g ON g.id = c.id_almuat 
+      LEFT JOIN alamat h ON h.id = c.id_albongkar 
+      LEFT JOIN m_pengadaan d ON d.id_mp = c.id_mp 
+      LEFT JOIN customer e ON e.id_customer = d.id_customer 
+      INNER JOIN users f ON f.id = a.id_user 
+      WHERE a.id_sm_receive IN (${placeholders}) 
+      GROUP BY a.id_sm_receive 
+      ORDER BY a.id_sm_receive DESC
+    `;
+
+    const rows = await db.query(sql, ids);
+
+    return res.status(200).json({
+      status: { code: 200, message: 'Success Get Print Serahkan SJ Data' },
+      data: rows
     });
   } catch (error) {
     return res.status(500).json({ status: { code: 500, message: error.message } });
@@ -1021,7 +1081,6 @@ exports.monitoringHistoryReceive = async (req, res) => {
       draw,
       recordsTotal: res_count,
       recordsFiltered: res_count,
-      sql: dataSql,
       data
     });
   } catch (error) {

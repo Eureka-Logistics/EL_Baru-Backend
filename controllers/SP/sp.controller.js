@@ -3263,7 +3263,7 @@ exports.getTarifAlamat = async (req, res) => {
 }
 
 exports.createDoMassage = async (req, res) => {
-    try {
+  try {
         const getUser = await models.users.findOne(
             {
                 where: {
@@ -3271,21 +3271,23 @@ exports.createDoMassage = async (req, res) => {
                 }
             }
         )
-        const getMassageDo = await models.massage_do.findOne(
-            {
-                where: {
-                    status: 1,
-                    massage: req.body.massage
-                }
-            }
-        )
-        if (getUser && !getMassageDo) {
-            const createDo = await models.massage_do.create(
-                {
-                    'massage': req.body.massage,
-                    'status': 1
-                }
-            )
+    const getMassageDo = await models.massage_do.findOne(
+      {
+        where: {
+          status: 1,
+          massage: req.body.massage,
+          ...(req.body.used_by ? { used_by: req.body.used_by } : {})
+        }
+      }
+    )
+    if (getUser && !getMassageDo) {
+      const createDo = await models.massage_do.create(
+        {
+          'massage': req.body.massage,
+          'used_by': req.body.used_by ?? null,
+          'status': 1
+        }
+      )
             const updateStatus = await models.m_status_order.update(
                 {
                     act_sales: "Y",
@@ -3837,7 +3839,7 @@ exports.getCancelDoList = async (req, res) => {
 }
 
 exports.getMassageDo = async (req, res) => {
-    try {
+  try {
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
 
         const getUser = await models.users.findOne(
@@ -3848,25 +3850,27 @@ exports.getMassageDo = async (req, res) => {
             }
         )
         if (getUser) {
-            const getMassageDo = await models.massage_do.findAndCountAll(
-                {
-                    where: {
-                        status: 1
-                    },
-                    limit: limit,
-                    offset: offset,
-                }
-            )
-            if (getMassageDo.rows) {
-                let no = (getMassageDo.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
-                const result = getMassageDo.rows.map((item) => {
-                    return {
-                        no: no++,
-                        id: item.id_massage_do,
-                        massage: item.massage,
+      const getMassageDo = await models.massage_do.findAndCountAll(
+        {
+          where: {
+            status: 1,
+            ...(req.query.used_by ? { used_by: req.query.used_by } : {})
+          },
+          limit: limit,
+          offset: offset,
+        }
+      )
+      if (getMassageDo.rows) {
+        let no = (getMassageDo.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
+        const result = getMassageDo.rows.map((item) => {
+          return {
+            no: no++,
+            id: item.id_massage_do,
+            massage: item.massage,
+            used_by: item.used_by ?? null,
 
-                    }
-                })
+          }
+        })
 
                 output = {
                     status: {
@@ -11611,4 +11615,3 @@ exports.rejectSmCost = async (req, res) => {
         });
     }
 };
-
