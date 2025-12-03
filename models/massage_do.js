@@ -11,6 +11,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(255),
       allowNull: false
     },
+    used_by: {
+      type: DataTypes.STRING(5),
+      allowNull: true
+    },
     status: {
       type: DataTypes.INTEGER,
       allowNull: false

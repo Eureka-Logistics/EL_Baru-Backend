@@ -37,6 +37,8 @@ router.get('/order/monitoring-history-receive', authentication, orderController.
 // Monitoring history receive (DataTables server-side)
 router.post('/order/monitoring-history-receive', authentication, orderController.monitoringHistoryReceive);
 
+// Print serahkan SJ (return JSON data untuk front-end print)
+router.get('/order/print_serahkan_sj', authentication, orderController.printSerahkanSJ);
 
 
 
