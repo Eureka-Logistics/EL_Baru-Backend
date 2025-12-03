@@ -1,0 +1,27 @@
+{
+  "name": "tarif-api-testing",
+  "version": "1.0.0",
+  "description": "Testing package untuk API Tarif dengan Konfirmasi",
+  "main": "test_tarif_api.js",
+  "scripts": {
+    "test": "node test_tarif_api.js",
+    "test:customer": "node -e \"require('./test_tarif_api').testTarifCustomerConfirmation()\"",
+    "test:eureka": "node -e \"require('./test_tarif_api').testTarifEurekaConfirmation()\"",
+    "test:mitra": "node -e \"require('./test_tarif_api').testTarifMitraConfirmation()\""
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1"
+  },
+  "keywords": [
+    "api",
+    "tarif",
+    "testing",
+    "confirmation",
+    "duplication"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

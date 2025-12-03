@@ -1,0 +1,64 @@
+const Sequelize = require('sequelize');
+module.exports = function(sequelize, DataTypes) {
+  return sequelize.define('m_driver_emergency', {
+    id_demergency: {
+      autoIncrement: true,
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      primaryKey: true
+    },
+    id_driver: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 0
+    },
+    lat: {
+      type: DataTypes.DOUBLE(10,7),
+      allowNull: false
+    },
+    long: {
+      type: DataTypes.DOUBLE(10,7),
+      allowNull: false
+    },
+    id_info: {
+      type: DataTypes.INTEGER,
+      allowNull: false
+    },
+    info: {
+      type: DataTypes.TEXT,
+      allowNull: false
+    },
+    location: {
+      type: DataTypes.TEXT,
+      allowNull: false
+    },
+    foto: {
+      type: DataTypes.STRING(100),
+      allowNull: false
+    },
+    status: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1
+    },
+    chat_date: {
+      type: DataTypes.DATE,
+      allowNull: false,
+      defaultValue: "0000-00-00 00:00:00"
+    }
+  }, {
+    sequelize,
+    tableName: 'm_driver_emergency',
+    timestamps: false,
+    indexes: [
+      {
+        name: "PRIMARY",
+        unique: true,
+        using: "BTREE",
+        fields: [
+          { name: "id_demergency" },
+        ]
+      },
+    ]
+  });
+};
