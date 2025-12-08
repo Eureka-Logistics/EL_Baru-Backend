@@ -31,6 +31,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 0
     },
+    sales_reject: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
     act_sales: {
       type: DataTypes.ENUM('Y','N'),
       allowNull: false,
@@ -45,6 +50,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: 25
+    },
+    akt_reject: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
     },
     act_akunting: {
       type: DataTypes.ENUM('Y','N'),
@@ -61,6 +71,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 0
     },
+    ops_reject: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
     kendaraan_operasional: {
       type: DataTypes.ENUM('Y','N'),
       allowNull: false,
@@ -74,6 +89,11 @@ module.exports = function(sequelize, DataTypes) {
     purchasing: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      defaultValue: 0
+    },
+    purch_reject: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
       defaultValue: 0
     },
     kendaraan_purchasing: {

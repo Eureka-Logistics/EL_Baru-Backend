@@ -366,7 +366,7 @@ exports.exportExcelUnlimited = async (req, res) => {
 
 exports.getMonitoringSJList = async (req, res) => {
   try {
-    const { mulai, selesai, bu, limit, page, vendor, brench, nopol } = req.query;
+    const { mulai, selesai, bu, limit, page, vendor, brench, nopol, customer, sukses_kirim, keyword } = req.query;
 
     if (!mulai || !selesai) {
       return res.status(400).json({
@@ -453,10 +453,36 @@ exports.getMonitoringSJList = async (req, res) => {
       sql += " AND a.pickup_nopol LIKE ?";
       params.push(`%${nopol}%`);
     }
+    if (customer) {
+      const isCustomerId = /^\d+$/.test(String(customer));
+      if (isCustomerId) {
+        sql += " AND u.id_customer = ?";
+        params.push(customer);
+      } else {
+        sql += " AND u.nama_perusahaan LIKE ?";
+        params.push(`%${customer}%`);
+      }
+    }
+    if (typeof sukses_kirim !== 'undefined') {
+      const sk = String(sukses_kirim).toLowerCase();
+      const isTrue = sk === '1' || sk === 'true' || sk === 'y' || sk === 'yes';
+      if (isTrue) {
+        sql += " AND EXISTS (SELECT 1 FROM kendaraanstatus ks9 WHERE ks9.id_msm = a.id_msm AND ks9.action = 9)";
+      } else {
+        sql += " AND NOT EXISTS (SELECT 1 FROM kendaraanstatus ks9 WHERE ks9.id_msm = a.id_msm AND ks9.action = 9)";
+      }
+    }
+    if (keyword) {
+      sql += " AND (a.msm LIKE ? OR u.nama_perusahaan LIKE ?)";
+      params.push(`%${keyword}%`, `%${keyword}%`);
+    }
 
     sql += " GROUP BY a.id_msm ORDER BY a.id_msm DESC LIMIT ? OFFSET ?";
     params.push(pageSize, offset);
 
+    const isCustomerId = customer && /^\d+$/.test(String(customer));
+    const skParam = typeof sukses_kirim !== 'undefined' ? String(sukses_kirim).toLowerCase() : null;
+    const skTrue = skParam === '1' || skParam === 'true' || skParam === 'y' || skParam === 'yes';
     const countSql = `
       SELECT COUNT(DISTINCT a.id_msm) AS total
       FROM m_sm a 
@@ -482,8 +508,20 @@ exports.getMonitoringSJList = async (req, res) => {
         ${brench ? ' AND t.id_bu_brench = ?' : ''}
         ${vendor ? ' AND a.id_mitra_pickup = ?' : ''}
         ${nopol ? ' AND a.pickup_nopol LIKE ?' : ''}
+        ${customer ? (isCustomerId ? ' AND u.id_customer = ?' : ' AND u.nama_perusahaan LIKE ?') : ''}
+        ${typeof sukses_kirim !== 'undefined' ? (skTrue ? ' AND EXISTS (SELECT 1 FROM kendaraanstatus ks9 WHERE ks9.id_msm = a.id_msm AND ks9.action = 9)' : ' AND NOT EXISTS (SELECT 1 FROM kendaraanstatus ks9 WHERE ks9.id_msm = a.id_msm AND ks9.action = 9)') : ''}
+        ${keyword ? ' AND (a.msm LIKE ? OR u.nama_perusahaan LIKE ?)' : ''}
     `;
-    const countParams = [mulai, selesai, ...(bu ? [bu] : []), ...(brench ? [brench] : []), ...(vendor ? [vendor] : []), ...(nopol ? [`%${nopol}%`] : [])];
+    const countParams = [
+      mulai,
+      selesai,
+      ...(bu ? [bu] : []),
+      ...(brench ? [brench] : []),
+      ...(vendor ? [vendor] : []),
+      ...(nopol ? [`%${nopol}%`] : []),
+      ...(customer ? (isCustomerId ? [customer] : [`%${customer}%`]) : []),
+      ...(keyword ? [`%${keyword}%`, `%${keyword}%`] : [])
+    ];
     const countRows = await db.query(countSql, countParams);
     const total = countRows?.[0]?.total ? Number(countRows[0].total) : 0;
 
@@ -544,98 +582,79 @@ exports.getMonitoringSJList = async (req, res) => {
 
 exports.getTerimaSJ = async (req, res) => {
   try {
-    const { id_msm, mulai, selesai, limit, page } = req.query;
-
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 50;
-    const offset = (pageNum - 1) * pageSize;
+    const { mulai, selesai, bu, bu_brench } = req.body?.params || {};
+    const penerima = req.session?.id;
 
     let sql = `
       SELECT 
-        msr.id_sm_receive,
-        msr.id_msm,
-        msr.divisi,
-        msr.id_user,
-        msr.checklist,
-        msr.no_invoice_vendor,
-        msr.status,
-        msr.date_added,
-        msr.memo,
-        msr.kepada,
-        msr.diserahkan,
-        msr.diserahkan_group,
-        msr.tolak_user,
-        msr.tolak_tgl,
-        a.no_invoice_ap,
-        a.tgl_terima_inv,
-        u.nama_lengkap
-      FROM m_sm_receive msr
-      LEFT JOIN m_sm a ON a.id_msm = msr.id_msm
-      LEFT JOIN users u ON u.id = msr.id_user
-      WHERE 1=1
+        a.id_sm_receive,
+        a.id_msm,
+        a.divisi,
+        a.id_user,
+        a.checklist,
+        a.no_invoice_vendor,
+        a.status,
+        a.date_added,
+        a.memo,
+        a.kepada,
+        a.diserahkan,
+        a.diserahkan_group,
+        a.tolak_user,
+        a.tolak_tgl,
+        b.msm,
+        d.msp,
+        e.nama_perusahaan,
+        f.nama_lengkap
+      FROM m_sm_receive a
+      INNER JOIN m_sm b ON b.id_msm = a.id_msm
+      INNER JOIN m_pengadaan_detail c ON c.id_mpd = b.id_mpd
+      LEFT JOIN m_pengadaan d ON d.id_mp = c.id_mp
+      LEFT JOIN customer e ON e.id_customer = d.id_customer
+      INNER JOIN users t ON t.id = d.id_sales
+      INNER JOIN m_bu q ON q.id_bu = t.id_bu
+      LEFT JOIN m_bu_brench s ON s.id_bu_brench = t.id_bu_brench
+      INNER JOIN users f ON f.id = a.id_user
+      WHERE d.status != '0'
+        AND a.id_user = ?
+        AND (a.diserahkan IS NULL OR a.diserahkan = '0000-00-00')
     `;
 
-    const params = [];
-
-    if (id_msm) {
-      sql += " AND msr.id_msm = ?";
-      params.push(id_msm);
-    }
+    const params = [penerima];
 
     if (mulai && selesai) {
-      sql += " AND (msr.date_added BETWEEN ? AND ?)";
-      params.push(mulai, selesai);
+      sql += " AND a.date_added BETWEEN ? AND ?";
+      params.push(`${mulai} 00:00:00`, `${selesai} 23:59:59`);
     }
 
-    sql += " ORDER BY msr.date_added DESC LIMIT ? OFFSET ?";
-    params.push(pageSize, offset);
+    if (bu) sql += " AND q.id_bu = ?";
+    if (bu_brench) sql += " AND s.id_bu_brench = ?";
+
+    sql += " GROUP BY a.id_sm_receive ORDER BY a.id_msm DESC";
 
     const rows = await db.query(sql, params);
 
-    const hasil = rows.map(r => ({
-      id_sm_receive: String(r.id_sm_receive),
-      id_msm: String(r.id_msm),
-      divisi: r.divisi,
-      id_user: String(r.id_user),
-      checklist: r.checklist,
-      no_invoice_vendor: r.no_invoice_vendor || "",
-      status: r.status,
-      date_added: r.date_added ? moment(r.date_added).format('YYYY-MM-DD HH:mm:ss') : null,
-      memo: r.memo || "",
-      kepada: r.kepada || null,
-      diserahkan: r.diserahkan || null,
-      diserahkan_group: r.diserahkan_group || null,
-      tolak_user: r.tolak_user || null,
-      tolak_tgl: r.tolak_tgl ? moment(r.tolak_tgl).format('YYYY-MM-DD HH:mm:ss') : null,
-      no_invoice_ap: r.no_invoice_ap || null,
-      tgl_terima_inv: r.tgl_terima_inv || null
-    }));
-
-    const toAction = (status) => {
-      if (status === 'reject') return 'Ditolak';
-      if (status === 'receive') return 'Diterima';
-      return 'Diproses';
-    };
-
-    const res_check = rows.map(r => ({
-      id_sm_receive: String(r.id_sm_receive),
-      tgl: r.date_added ? moment(r.date_added).format('YYYY-MM-DD HH:mm:ss') : null,
-      siapa: r.nama_lengkap || '-',
-      aksi: toAction(r.status)
-    }));
-
-    return res.status(200).json({
-      status: { code: 200, message: 'Success Get Terima SJ' },
-      hasil,
-      res_check,
-      pagination: { page: pageNum, limit: pageSize, count: rows.length }
+    const hasil = rows.map((r, i) => {
+      const checklist = r.checklist
+        ? r.checklist.split(",").map(c => `<span class='label bg-green'>${c.replace("_"," ")}</span>`).join("\n")
+        : "";
+      return {
+        no: i + 1,
+        id_msm: r.id_msm,
+        id_sm_receive: r.id_sm_receive,
+        msm: r.msm,
+        nama_perusahaan: r.nama_perusahaan,
+        checklist,
+        date_added: r.date_added,
+        nama_lengkap: r.nama_lengkap
+      };
     });
+
+    return res.status(200).json({ data: hasil });
+
   } catch (error) {
-    return res.status(500).json({
-      status: { code: 500, message: error.message }
-    });
+    return res.status(500).json({ status: { code: 500, message: error.message } });
   }
-}
+};
 
 exports.submitTerimaSJ = async (req, res) => {
   try {
@@ -728,6 +747,10 @@ exports.submitTerimaSJ = async (req, res) => {
 exports.getReceiveSjOps = async (req, res) => {
   try {
     const params = req.body?.params || {};
+    const rawSearch = (req.body?.search?.value || '').trim();
+    const paramKeyword = String(params.keyword || '').trim();
+    const searchValue = rawSearch || paramKeyword;
+    const keywordType = params.keyword;
     const tgl_mulai = params.tgl_mulai;
     const tgl_akhir = params.tgl_akhir;
     const bu = params.bu;
@@ -765,6 +788,37 @@ exports.getReceiveSjOps = async (req, res) => {
     if (brench) {
       sql += ` AND s.id_bu_brench LIKE ?`;
       paramsQuery.push(brench);
+    }
+
+    if (searchValue && keywordType !== '11' && keywordType !== '11-031311') {
+      sql += ` AND (
+        b.msm LIKE ? OR 
+        e.nama_perusahaan LIKE ?
+      )`;
+      const sv = `%${searchValue}%`;
+      paramsQuery.push(sv, sv);
+    }
+
+    if (keywordType === '11' && searchValue) {
+      sql += ` AND (
+        b.msm LIKE ? OR 
+        d.msp LIKE ? OR 
+        e.nama_perusahaan LIKE ? OR 
+        b.nopol LIKE ? OR 
+        a.checklist LIKE ? OR 
+        b.do LIKE ?
+      )`;
+      const sv = `%${searchValue}%`;
+      paramsQuery.push(sv, sv, sv, sv, sv, sv);
+    }
+
+    if (keywordType === '11-031311' && searchValue) {
+      sql += ` AND (
+        b.msm LIKE ? OR 
+        e.nama_perusahaan LIKE ?
+      )`;
+      const sv = `%${searchValue}%`;
+      paramsQuery.push(sv, sv);
     }
 
     sql += ` GROUP BY a.id_sm_receive ORDER BY a.id_msm DESC`;
@@ -840,7 +894,7 @@ exports.submitSerahkanSJ = async (req, res) => {
       message: error.message
     });
   }
-}
+} 
 
 exports.getMonitoringHistoryReceive = async (req, res) => {
   try {
@@ -993,98 +1047,48 @@ exports.printSerahkanSJ = async (req, res) => {
 
 exports.monitoringHistoryReceive = async (req, res) => {
   try {
-    const draw = parseInt(req.body.draw || 1);
-    const start = parseInt(req.body.start || 0);
-    const length = parseInt(req.body.length || 10);
-    const searchValue = req.body?.search?.value || '';
-    const paramsBody = req.body?.params || {};
-    const mitra = paramsBody.mitra || '';
-    const bu = paramsBody.bu || '';
-    const brench = paramsBody.brench || '';
-    const mulai = paramsBody.mulai;
-    const selesai = paramsBody.selesai;
-    const id_user = paramsBody.id_user || '';
+    const id_msm = req.body.id_msm;
+    if (!id_msm) {
+      return res.status(200).json({ error: 'true' });
+    }
 
-    let baseSql = `
-      SELECT a.*, b.msm, d.msp, e.nama_perusahaan, f.nama_lengkap
-      FROM m_sm_receive a
+    const sql = `
+      SELECT a.*, b.no_invoice_ap, b.tgl_terima_inv FROM m_sm_receive a
       INNER JOIN m_sm b ON b.id_msm = a.id_msm
-      INNER JOIN m_pengadaan_detail c ON c.id_mpd = b.id_mpd
-      LEFT JOIN m_pengadaan d ON d.id_mp = c.id_mp
-      LEFT JOIN customer e ON e.id_customer = d.id_customer
-      INNER JOIN users t ON t.id = d.id_sales
-      INNER JOIN m_bu q ON q.id_bu = t.id_bu
-      LEFT JOIN m_bu_brench s ON s.id_bu_brench = t.id_bu_brench
-      INNER JOIN users f ON f.id = a.id_user
-      WHERE b.is_deleted = 0
+      WHERE a.id_msm = ? ORDER BY id_sm_receive DESC
     `;
+    const hasil = await db.query(sql, [id_msm]);
 
-    const whereParts = [];
-    const whereParams = [];
+    const sql_history = `
+      SELECT subquery.id_sm_receive, subquery.tgl, subquery.siapa, subquery.aksi 
+      FROM ( 
+          SELECT smr.id_sm_receive, smr.date_added AS tgl, usr.nama_lengkap AS siapa, 'Diterima' AS aksi 
+          FROM m_sm_receive smr 
+          INNER JOIN users usr ON usr.id=smr.id_user 
+          WHERE id_sm_receive IS NOT NULL AND id_msm = ? 
+          UNION ALL 
+          SELECT smi.id_sm_receive, smi.diserahkan AS tgl, smi.kepada AS siapa, 'Diserahkan' AS aksi 
+          FROM m_sm_receive smi 
+          WHERE (diserahkan IS NOT NULL AND diserahkan != '0000-00-00 00:00:00' ) AND id_msm = ? 
+          UNION ALL 
+          SELECT smv.id_sm_receive, smv.tolak_tgl AS tgl, usv.nama_lengkap AS siapa, 'Ditolak' AS aksi 
+          FROM m_sm_receive smv 
+          INNER JOIN users usv ON usv.id=smv.tolak_user 
+          WHERE tolak_tgl IS NOT NULL AND id_msm = ? 
+      ) AS subquery ORDER BY subquery.tgl DESC`;
+    const res_master = await db.query(sql_history, [id_msm, id_msm, id_msm]);
 
-    if (mulai && selesai) {
-      whereParts.push('a.date_added BETWEEN ? AND ?');
-      whereParams.push(mulai, selesai);
+    if (hasil && hasil.length > 0) {
+      return res.status(200).json({
+        error: 'false',
+        hasil,
+        res_check: res_master
+      });
+    } else {
+      return res.status(200).json({ error: 'true' });
     }
-    if (mitra) {
-      // Placeholder: kolom vendor tidak ada di join, abaikan/filter saat perlu
-      // whereParts.push("h.vendor LIKE ?");
-      // whereParams.push(`%${mitra}%`);
-    }
-    if (searchValue) {
-      whereParts.push('b.msm LIKE ?');
-      whereParams.push(`%${searchValue}%`);
-    }
-    if (bu) {
-      whereParts.push('t.id_bu = ?');
-      whereParams.push(bu);
-    }
-    if (brench) {
-      whereParts.push('s.id_bu_brench = ?');
-      whereParams.push(brench);
-    }
-    if (id_user) {
-      whereParts.push('a.id_user = ?');
-      whereParams.push(id_user);
-    }
-
-    if (whereParts.length) {
-      baseSql += ' AND ' + whereParts.join(' AND ');
-    }
-
-    const countSql = baseSql + ' GROUP BY a.id_sm_receive';
-    const countRows = await db.query(countSql, whereParams);
-    const res_count = countRows.length;
-
-    const dataSql = countSql + ' ORDER BY a.id_sm_receive DESC LIMIT ? OFFSET ?';
-    const dataParams = [...whereParams, length, start];
-    const resRows = await db.query(dataSql, dataParams);
-
-    const startNo = start;
-    const data = resRows.map((key, idx) => {
-      const no = startNo + idx + 1;
-      const diserahkanLink = key.diserahkan ? `${core.baseUrl}/monitoring/order/print_serahkan_sj?group=${key.diserahkan_group}` : '';
-      return {
-        no,
-        msm: `<a href="${key.id_msm}"><b>${key.msm}</b> <br>${key.msp}</a>`,
-        nama_perusahaan: key.nama_perusahaan,
-        checklist: key.checklist,
-        status: `<span class="badge bg-green">${key.status}</span>`,
-        date_added: `<span id="${key.id_sm_receive}">${key.date_added}</span>`,
-        memo: key.memo,
-        nama_lengkap: key.nama_lengkap,
-        diserahkan: key.diserahkan ? `<a class="btn btn-sm btn-primary" href="${diserahkanLink}">${key.diserahkan} <small> - Print</small></a>` : ''
-      };
-    });
-
-    return res.status(200).json({
-      draw,
-      recordsTotal: res_count,
-      recordsFiltered: res_count,
-      data
-    });
   } catch (error) {
-    return res.status(500).json({ status: { code: 500, message: error.message } });
+    return res.status(200).json({ error: 'true' });
   }
 }
 

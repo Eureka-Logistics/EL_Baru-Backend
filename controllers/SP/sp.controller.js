@@ -3564,6 +3564,16 @@ exports.cancelDoSp = async (req, res) => {
                     }
                 }
             )
+            await models.m_status_order.update(
+                {
+                    sales_reject: req.body.id_massage_do
+                },
+                {
+                    where: {
+                        id_mp: req.body.id_mp
+                    }
+                }
+            )
             // const updtStatus = await models.m_status_order.update(
             //     {
 
@@ -6029,6 +6039,17 @@ exports.declineSp = async (req, res) => {
                 }
             )
             if (updOrderStat) {
+            const opsRejectId = parseInt(req.body.id_do_massage || 0, 10) || 0;
+            await models.m_status_order.update(
+                {
+                    ops_reject: opsRejectId
+                },
+                {
+                    where: {
+                        id_mp: req.body.id_mp
+                    }
+                }
+            )
                 const updStatMsg = await models.m_chat.create(
                     {
                         "id_mp": req.body.id_mp,
@@ -6671,6 +6692,17 @@ exports.rejecAkunting = async (req, res) => {
                     akunting: req.user.id,
                     act_akunting: "N",
                     tgl_act_3: core.moment(Date.now()).format("YYYY-MM-DD hh:mm:ss"),
+                },
+                {
+                    where: {
+                        id_mp: req.body.id_mp
+                    }
+                }
+            )
+            const aktRejectId = parseInt(req.body.id_do_massage || 0, 10) || 0;
+            await models.m_status_order.update(
+                {
+                    akt_reject: aktRejectId
                 },
                 {
                     where: {
@@ -7944,6 +7976,17 @@ exports.rejectPurch = async (req, res) => {
                     purchasing: req.user.id,
                     kendaraan_purchasing: "N",
                     tgl_act_5: core.moment(Date.now()).format("YYYY-MM-DD HH:mm:ss"),
+                },
+                {
+                    where: {
+                        id_mp: req.body.id_mp
+                    }
+                }
+            )
+            const purchRejectId = parseInt(req.body.id_do_massage || 0, 10) || 0;
+            await models.m_status_order.update(
+                {
+                    purch_reject: purchRejectId
                 },
                 {
                     where: {
@@ -10418,32 +10461,22 @@ exports.getLostSales = async (req, res) => {
                     where: {
                         [Op.and]: [
                             {
-                                kendaraan_operasional: "N",
+                                [Op.or]: [
+                                    {
+                                        sales_reject: {
+                                            [Op.in]: [8, 11]
+                                        }
+                                    },
 
-                            },
-                            {
-                                operasional: { [Op.ne]: 0 },
-
-                            },
-                            {
-                                act_akunting: "Y",
-
-                            },
-                            {
-                                akunting: { [Op.ne]: 0 },
-
-                            },
-                            {
-                                kendaraan_purchasing: "N",
-
-
-                            },
-                            {
-                                purchasing: { [Op.ne]: 0 },
-
-                            },
-
-                        ],
+                                    {
+                                        [Op.and]: [
+                                            { ops_reject: 53 },
+                                            { purch_reject: 54 }
+                                        ]
+                                    }
+                                ]
+                            }
+                        ]
                     },
 
                     // ...req.query.is_multi == 1 ? { group: [['msp']] } : {},
@@ -10499,38 +10532,29 @@ exports.getLostSales = async (req, res) => {
                 let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
                 const result = await Promise.all(getData.rows.map(async (item, index) => {
 
-                    const getTujuan = await models.alamat.findOne(
-                        {
-                            where: {
-                                id: item.m_pengadaan.m_pengadaan_details[0].id_albongkar
-                            }
-                        }
-                    )
-                    const getChatMkt = await models.m_chat.findOne(
-                        {
-                            where: {
-                                id_mp: item.m_pengadaan.id_mp,
-                                user: ['1', '323']
-                            }
-                        }
-                    )
-                    const getChatOps = await models.m_chat.findOne(
-                        {
-                            where: {
-                                id_mp: item.m_pengadaan.id_mp,
-                                user: ['4', '14']
-                            }
-                        }
-                    )
-                    console.log(item.m_pengadaan.id_mp)
-                    const getChatPurch = await models.m_chat.findOne(
-                        {
-                            where: {
-                                id_mp: item.m_pengadaan.id_mp,
-                                user: ['2', '255', '47']
-                            }
-                        }
-                    )
+                    const detail0 = Array.isArray(item.m_pengadaan?.m_pengadaan_details)
+                      ? item.m_pengadaan.m_pengadaan_details[0] : null;
+                    const idAlbongkar = detail0?.id_albongkar || null;
+                    const getTujuan = idAlbongkar
+                      ? await models.alamat.findOne({ where: { id: idAlbongkar } })
+                      : null;
+                    const chatMkt = item.sales_reject
+                    ? await models.massage_do.findOne({
+                            where: { id_massage_do: item.sales_reject }
+                        })
+                    : null;
+
+                    const chatOps = item.ops_reject
+                    ? await models.massage_do.findOne({
+                            where: { id_massage_do: item.ops_reject }
+                        })
+                    : null;
+
+                    const chatPurch = item.purch_reject
+                    ? await models.massage_do.findOne({
+                            where: { id_massage_do: item.purch_reject }
+                        })
+                    : null;
                     return {
                         no: startIndex + index,
                         idmp: item.id_mp,
@@ -10538,13 +10562,13 @@ exports.getLostSales = async (req, res) => {
                         sp: item.m_pengadaan == null ? "-" : item.m_pengadaan.msp,
                         salesName: item.m_pengadaan == null ? "-" : item.m_pengadaan.user?.nama_lengkap,
                         perusahaan: item.m_pengadaan == null ? "-" : item.m_pengadaan.customer?.nama_perusahaan,
-                        kendaraan: item.m_pengadaan == null ? "-" : item.m_pengadaan.m_pengadaan_details[0].kendaraan,
+                        kendaraan: detail0 == null ? "-" : detail0.kendaraan,
                         pickupDate: item.m_pengadaan == null ? "-" : core.moment(item.m_pengadaan.tgl_pickup).format('YYYY-MM-DD HH:mm:ss'),
                         total: item.m_pengadaan == null ? "-" : item.m_pengadaan.total_keseluruhan,
                         tujuan: getTujuan == null ? "-" : getTujuan.alamat_detail,
-                        chatMkt: getChatMkt == null ? "-" : getChatMkt.chat,
-                        chatOps: getChatOps == null ? "-" : getChatOps.chat,
-                        getChatPurch: getChatPurch == null ? "-" : getChatPurch.chat,
+                        chatMkt: chatMkt?.massage || "-",
+                        chatOps: chatOps?.massage || "-",
+                        chatPurch: chatPurch?.massage || "-"
 
 
                         // tujuan:item.m_pengadaan.

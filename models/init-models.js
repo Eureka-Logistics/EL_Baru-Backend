@@ -367,7 +367,9 @@ var _tsm = require("./tsm");
 var _uang_jalan = require("./uang_jalan");
 var _uang_jalan_periode = require("./uang_jalan_periode");
 var _uang_jalan_periode_detail = require("./uang_jalan_periode_detail");
+var _uang_jalan_ptj = require("./uang_jalan_ptj");
 var _uang_jalan_race = require("./uang_jalan_race");
+var _uang_jalan_new = require("./uang_jalan_new");
 var _updt_total_mpd = require("./updt_total_mpd");
 var _usergroups = require("./usergroups");
 var _users = require("./users");
@@ -745,7 +747,9 @@ function initModels(sequelize) {
   var uang_jalan = _uang_jalan(sequelize, DataTypes);
   var uang_jalan_periode = _uang_jalan_periode(sequelize, DataTypes);
   var uang_jalan_periode_detail = _uang_jalan_periode_detail(sequelize, DataTypes);
+  var uang_jalan_ptj = _uang_jalan_ptj(sequelize, DataTypes);
   var uang_jalan_race = _uang_jalan_race(sequelize, DataTypes);
+  var uang_jalan_new = _uang_jalan_new(sequelize, DataTypes);
   var updt_total_mpd = _updt_total_mpd(sequelize, DataTypes);
   var usergroups = _usergroups(sequelize, DataTypes);
   var users = _users(sequelize, DataTypes);
@@ -1150,7 +1154,9 @@ function initModels(sequelize) {
     uang_jalan,
     uang_jalan_periode,
     uang_jalan_periode_detail,
+    uang_jalan_ptj,
     uang_jalan_race,
+    uang_jalan_new,
     updt_total_mpd,
     usergroups,
     users,
