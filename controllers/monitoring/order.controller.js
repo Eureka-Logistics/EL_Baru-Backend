@@ -776,7 +776,7 @@ exports.getReceiveSjOps = async (req, res) => {
 
     if (tgl_mulai && tgl_akhir) {
       sql += ` AND a.date_added BETWEEN ? AND ?`;
-      paramsQuery.push(tgl_mulai, tgl_akhir);
+      paramsQuery.push(`${tgl_mulai} 00:00:00`, `${tgl_akhir} 23:59:59`);
     }
 
     sql += ` AND (a.diserahkan IS NULL OR a.diserahkan = '0000-00-00')`;

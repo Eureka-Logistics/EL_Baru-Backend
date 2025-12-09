@@ -764,13 +764,34 @@ exports.getSelectCreateSp = async (req, res) => {
     });
 
     const getMarketing = await models.m_bu_employee.findAll({
-      where: {
+    where: {
         id_bu: getCabang.id_bu,
         id_bu_brench: getCabang.id_bu_brench,
         category: "Sales"
-      },
-      include: [{ model: models.users }]
+    },
+    include: [
+        { 
+        model: models.users, 
+        where: { aktif: 'Y' }, // filter user aktif
+        required: true // inner join, hanya ambil yang ada user aktif
+        }
+    ]
     });
+
+    // Mapping response
+    const marketing = getMarketing.map(i => ({
+    id: i.user.id,
+    id_bu: i.id_bu,
+    id_bu_brench: i.id_bu_brench,
+    nik: i.code_employee,
+    fullname: i.fullname,
+    divisi: i.division,
+    idGl: i.id_gl,
+    idasm: i.id_asm,
+    idMgr: i.id_mgr,
+    idKacab: i.id_kacab,
+    idAmd: i.id_amd
+    }));
 
     const getVia = await models.m_shipment.findAll();
 
