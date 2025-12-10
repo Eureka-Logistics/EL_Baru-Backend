@@ -203,9 +203,19 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: 0
     },
+    biaya_pengganti: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: 0
+    },
     diskon: {
       type: DataTypes.INTEGER,
       allowNull: false,
+      defaultValue: 0
+    },
+    subtotal: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
       defaultValue: 0
     },
     total_keseluruhan: {

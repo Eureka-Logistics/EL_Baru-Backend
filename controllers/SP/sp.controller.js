@@ -2355,6 +2355,30 @@ exports.createDetailSp = async (req, res) => {
             }
         )
         if (getUser) {
+            // Hitung total_produk
+            const totalProduk = (req.body.harga || 0) * (req.body.jumlah || 0)
+            
+            // Hitung diskon (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
+            const diskonPersen = req.body.diskon || 0
+            const diskonNilai = totalProduk * (diskonPersen / 100)
+            
+            // Hitung pajak hanya jika ada dari payload frontend
+            const pajak = req.body.pajak ? (req.body.pajak / 100) * (totalProduk - diskonNilai) : 0
+            
+            // Ambil semua biaya untuk perhitungan total detail
+            const detailBiayaOvertonase = req.body.biaya_overtonase || 0
+            const detailBiayaPengganti = 0 // Tidak ada di detail level
+            const detailBiayaMuat = req.body.harga_muat || 0
+            const detailBiayaMuatBongkar = req.body.harga_bongkar || 0
+            const detailBiayaMultiDrop = req.body.biaya_multidrop || 0
+            const detailBiayaLain = req.body.biaya_lain || 0
+            const detailBiayaMel = req.body.biaya_mel || 0
+            const detailBiayaTambahan = req.body.biaya_tambahan || 0
+            const detailBiayaMultiMuat = req.body.biaya_multimuat || 0
+            
+            // Hitung total: total_produk - diskon + pajak + semua biaya (tanpa harga/biaya_jalan)
+            const total = totalProduk - diskonNilai + pajak + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
+            
             const createDetail = await models.m_pengadaan_detail.create(
                 {
                     'id_mp': req.body.idMp,
@@ -2383,22 +2407,22 @@ exports.createDetailSp = async (req, res) => {
                     'diskon': req.body.diskon,
                     'harga_type': "",
                     'harga': req.body.harga,
-                    'total': req.body.total,
-                    'harga_muat': req.body.harga_muat,
-                    'harga_bongkar': req.body.harga_bongkar,
-                    'biaya_overtonase': req.body.biaya_overtonase,
-                    'biaya_multimuat': req.body.biaya_multimuat,
-                    'biaya_multidrop': req.body.biaya_multidrop,
-                    'biaya_mel': req.body.biaya_mel,
-                    'biaya_tambahan': req.body.biaya_tambahan,
-                    'biaya_lain': req.body.biaya_lain,
-                    // 'biaya_jalan': req.body.biaya_jalan,
+                    'jumlah': req.body.jumlah || 0,
+                    'total_produk': totalProduk,
+                    'total': Math.round(total), // Bulatkan ke integer
+                    'harga_muat': req.body.harga_muat || 0,
+                    'harga_bongkar': req.body.harga_bongkar || 0,
+                    'biaya_overtonase': req.body.biaya_overtonase || 0,
+                    'biaya_multimuat': req.body.biaya_multimuat || 0,
+                    'biaya_multidrop': req.body.biaya_multidrop || 0,
+                    'biaya_mel': req.body.biaya_mel || 0,
+                    'biaya_tambahan': req.body.biaya_tambahan || 0,
+                    'biaya_lain': req.body.biaya_lain || 0,
                     'max_tonase': req.body.max_tonase,
                     'harga_selanjutnya': req.body.harga_selanjutnya,
                     'id_price_customer': req.body.id_price_customer,
                     'km': 0,
                     'ikat': 0,
-                    'diskon': 0,
                     'durasi_lelang': "00:00:00",
                     'harga_lelang': 0,
                     'status': 0,
@@ -2417,7 +2441,14 @@ exports.createDetailSp = async (req, res) => {
                     }
                 )
 
-                const total = core.sumArray(getPrice.map((i) => i.total))
+                // Get existing m_pengadaan data to get diskon and biaya_pengganti
+                const getPengadaanData = await models.m_pengadaan.findOne({
+                    where: {
+                        id_mp: req.body.idMp
+                    }
+                })
+
+                const subtotal = core.sumArray(getPrice.map((i) => i.total_produk || 0))
                 const tarif = core.sumArray(getPrice.map((i) => i.harga))
                 const biayaMuat = core.sumArray(getPrice.map((i) => i.harga_muat))
                 const biayBongkar = core.sumArray(getPrice.map((i) => i.harga_bongkar))
@@ -2429,10 +2460,17 @@ exports.createDetailSp = async (req, res) => {
                 const biayaLain = core.sumArray(getPrice.map((i) => i.biaya_lain))
                 const maxTonase = core.sumArray(getPrice.map((i) => i.max_tonase))
                 const hargaSelanjutnya = core.sumArray(getPrice.map((i) => i.harga_selanjutnya))
-                if (total) {
+                
+                // Calculate total_keseluruhan: subtotal + diskon + biaya_overtonase + biaya_pengganti + biaya_muat + biaya_muat_bongkar + biaya_multi_drop + biaya_lain + biaya_mel + biaya_jalan + biaya_tambahan + biaya_multi_muat
+                const diskon = getPengadaanData ? (getPengadaanData.diskon || 0) : 0
+                const biayaPengganti = getPengadaanData ? (getPengadaanData.biaya_pengganti || 0) : 0
+                const totalKeseluruhan = subtotal + diskon + biayaOvertonase + biayaPengganti + biayaMuat + biayBongkar + biayaMultiDrop + biayaLain + biayaMel + tarif + biayaTambahan + biayaMultiMuat
+                
+                if (subtotal !== null && subtotal !== undefined) {
                     const udpTotalSp = await models.m_pengadaan.update(
                         {
-                            total_keseluruhan: total,
+                            subtotal: subtotal,
+                            total_keseluruhan: totalKeseluruhan,
                             biaya_muat: biayaMuat,
                             biaya_muat_bongkar: biayBongkar,
                             overtonase: maxTonase,
@@ -2919,6 +2957,7 @@ exports.deleteDetailSp = async (req, res) => {
                 }
             )
             const getPriceTotal = getDataMpd.total
+            const totalProdukDeleted = getDataMpd.total_produk || 0
             const hargaMuat = getDataMpd.harga_muat
             const hargaBongkar = getDataMpd.harga_bongkar
             const biayaOvertonase = getDataMpd.biaya_overtonase
@@ -2942,6 +2981,15 @@ exports.deleteDetailSp = async (req, res) => {
                     }
                 )
 
+                // Get remaining details to recalculate subtotal
+                const getRemainingPrice = await models.m_pengadaan_detail.findAll(
+                    {
+                        where: {
+                            id_mp: getIdmp,
+                            id_mpd: { [Op.ne]: req.body.id }
+                        }
+                    }
+                )
 
                 const biayaMuatMp = getPengadaan.biaya_muat
                 const biayaBongkarMp = getPengadaan.biaya_muat_bongkar
@@ -2954,23 +3002,41 @@ exports.deleteDetailSp = async (req, res) => {
                 const hargaSelanjutnyaMp = getPengadaan.harga_selanjutnya
                 const biayaTambahanMp = getPengadaan.biaya_tambahan
                 const biayaMultimuatMp = getPengadaan.biaya_multi_muat
-                const totalMp = getPengadaan.total_keseluruhan
+                const subtotalMp = getPengadaan.subtotal || 0
+                const diskon = getPengadaan.diskon || 0
+                const biayaPengganti = getPengadaan.biaya_pengganti || 0
+
+                // Recalculate subtotal from remaining details
+                const newSubtotal = core.sumArray(getRemainingPrice.map((i) => i.total_produk || 0))
+                
+                // Calculate new total_keseluruhan: subtotal + diskon + biaya_overtonase + biaya_pengganti + biaya_muat + biaya_muat_bongkar + biaya_multi_drop + biaya_lain + biaya_mel + biaya_jalan + biaya_tambahan + biaya_multi_muat
+                const newBiayaMuat = biayaMuatMp - hargaMuat
+                const newBiayaBongkar = biayaBongkarMp - hargaBongkar
+                const newBiayaOvertonase = biayaOvertonaseMp - biayaOvertonase
+                const newBiayaMultiDrop = biayaMultidropMp - biayaMultiDrop
+                const newBiayaLain = biayaLainMp - biayaLain
+                const newBiayaMel = biayaMelMp - biayaMel
+                const newBiayaJalan = biayaJalanMp - getPrice
+                const newBiayaTambahan = biayaTambahanMp - biayaTambahan
+                const newBiayaMultiMuat = biayaMultimuatMp - biayaMultiMuat
+                const newTotalKeseluruhan = newSubtotal + diskon + newBiayaOvertonase + biayaPengganti + newBiayaMuat + newBiayaBongkar + newBiayaMultiDrop + newBiayaLain + newBiayaMel + newBiayaJalan + newBiayaTambahan + newBiayaMultiMuat
 
                 if (getPengadaan) {
                     const updData = await models.m_pengadaan.update(
                         {
-                            biaya_muat: biayaMuatMp - hargaMuat,
-                            biaya_muat_bongkar: biayaBongkarMp - hargaBongkar,
+                            subtotal: newSubtotal,
+                            biaya_muat: newBiayaMuat,
+                            biaya_muat_bongkar: newBiayaBongkar,
                             overtonase: overtonaseMp - maxTonase,
-                            biaya_overtonase: biayaOvertonaseMp - biayaOvertonase,
-                            biaya_multi_drop: biayaMultidropMp - biayaMultiDrop,
-                            biaya_lain: biayaLainMp - biayaLain,
-                            biaya_mel: biayaMelMp - biayaMel,
-                            biaya_jalan: biayaJalanMp - getPrice,
+                            biaya_overtonase: newBiayaOvertonase,
+                            biaya_multi_drop: newBiayaMultiDrop,
+                            biaya_lain: newBiayaLain,
+                            biaya_mel: newBiayaMel,
+                            biaya_jalan: newBiayaJalan,
                             harga_selanjutnya: hargaSelanjutnyaMp - hargaSelanjutnya,
-                            biaya_tambahan: biayaTambahanMp - biayaTambahan,
-                            biaya_multi_muat: biayaMultimuatMp - biayaMultiMuat,
-                            total_keseluruhan: totalMp - getPriceTotal,
+                            biaya_tambahan: newBiayaTambahan,
+                            biaya_multi_muat: newBiayaMultiMuat,
+                            total_keseluruhan: newTotalKeseluruhan,
                         },
                         {
                             where: {
@@ -4158,6 +4224,30 @@ exports.editSpDetail = async (req, res) => {
             }
         )
         if (getUser) {
+            // Hitung total_produk
+            const totalProduk = (req.body.harga || 0) * (req.body.jumlah || 0)
+            
+            // Hitung diskon (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
+            const diskonPersen = req.body.diskon || 0
+            const diskonNilai = totalProduk * (diskonPersen / 100)
+            
+            // Hitung pajak hanya jika ada dari payload frontend
+            const pajak = req.body.pajak ? (req.body.pajak / 100) * (totalProduk - diskonNilai) : 0
+            
+            // Ambil semua biaya untuk perhitungan total detail
+            const detailBiayaOvertonase = req.body.biaya_overtonase || 0
+            const detailBiayaPengganti = 0 // Tidak ada di detail level
+            const detailBiayaMuat = req.body.harga_muat || 0
+            const detailBiayaMuatBongkar = req.body.harga_bongkar || 0
+            const detailBiayaMultiDrop = req.body.biaya_multidrop || 0
+            const detailBiayaLain = req.body.biaya_lain || 0
+            const detailBiayaMel = req.body.biaya_mel || 0
+            const detailBiayaTambahan = req.body.biaya_tambahan || 0
+            const detailBiayaMultiMuat = req.body.biaya_multimuat || 0
+            
+            // Hitung total: total_produk - diskon + pajak + semua biaya (tanpa harga/biaya_jalan)
+            const total = totalProduk - diskonNilai + pajak + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
+            
             const updData = await models.m_pengadaan_detail.update(
                 {
                     // ph: req.body.ph,
@@ -4175,15 +4265,17 @@ exports.editSpDetail = async (req, res) => {
                     volume: req.body.volume,
                     diskon: req.body.diskon,
                     harga: req.body.harga ? req.body.harga : 0,
-                    total: req.body.total,
-                    harga_muat: req.body.harga_muat,
-                    harga_bongkar: req.body.harga_bongkar,
-                    biaya_overtonase: req.body.biaya_overtonase,
-                    biaya_multimuat: req.body.biaya_multimuat,
-                    biaya_multidrop: req.body.biaya_multidrop,
-                    biaya_mel: req.body.biaya_mel,
-                    biaya_tambahan: req.body.biaya_tambahan,
-                    biaya_lain: req.body.biaya_lain,
+                    jumlah: req.body.jumlah || 0,
+                    total_produk: totalProduk,
+                    total: Math.round(total), // Bulatkan ke integer
+                    harga_muat: req.body.harga_muat || 0,
+                    harga_bongkar: req.body.harga_bongkar || 0,
+                    biaya_overtonase: req.body.biaya_overtonase || 0,
+                    biaya_multimuat: req.body.biaya_multimuat || 0,
+                    biaya_multidrop: req.body.biaya_multidrop || 0,
+                    biaya_mel: req.body.biaya_mel || 0,
+                    biaya_tambahan: req.body.biaya_tambahan || 0,
+                    biaya_lain: req.body.biaya_lain || 0,
                     harga_selanjutnya: req.body.harga_selanjutnya,
                     max_tonase: req.body.max_tonase,
                     id_price_customer: req.body.id_price_customer,
@@ -4211,7 +4303,14 @@ exports.editSpDetail = async (req, res) => {
                 }
             )
 
-            const total = core.sumArray(getPrice.map((i) => i.total))
+            // Get existing m_pengadaan data to get diskon and biaya_pengganti
+            const getPengadaanData = await models.m_pengadaan.findOne({
+                where: {
+                    id_mp: getDataMp.id_mp
+                }
+            })
+
+            const subtotal = core.sumArray(getPrice.map((i) => i.total_produk || 0))
             const price = core.sumArray(getPrice.map((i) => i.harga))
             const biayaMuat = core.sumArray(getPrice.map((i) => i.harga_muat))
             const biayBongkar = core.sumArray(getPrice.map((i) => i.harga_bongkar))
@@ -4219,14 +4318,21 @@ exports.editSpDetail = async (req, res) => {
             const biayaMultiMuat = core.sumArray(getPrice.map((i) => i.biaya_multimuat))
             const biayaMultiDrop = core.sumArray(getPrice.map((i) => i.biaya_multidrop))
             const biayaMel = core.sumArray(getPrice.map((i) => i.biaya_mel))
-            const biayaTambahan = core.sumArray(getPrice.map((i) => i.biayaMel_tambahan))
+            const biayaTambahan = core.sumArray(getPrice.map((i) => i.biaya_tambahan))
             const biayaLain = core.sumArray(getPrice.map((i) => i.biaya_lain))
             const maxTonase = core.sumArray(getPrice.map((i) => i.max_tonase))
             const hargaSelanjutnya = core.sumArray(getPrice.map((i) => i.harga_selanjutnya))
-            if (total) {
+            
+            // Calculate total_keseluruhan: subtotal + diskon + biaya_overtonase + biaya_pengganti + biaya_muat + biaya_muat_bongkar + biaya_multi_drop + biaya_lain + biaya_mel + biaya_jalan + biaya_tambahan + biaya_multi_muat
+            const diskon = getPengadaanData ? (getPengadaanData.diskon || 0) : 0
+            const biayaPengganti = getPengadaanData ? (getPengadaanData.biaya_pengganti || 0) : 0
+            const totalKeseluruhan = subtotal + diskon + biayaOvertonase + biayaPengganti + biayaMuat + biayBongkar + biayaMultiDrop + biayaLain + biayaMel + price + biayaTambahan + biayaMultiMuat
+            
+            if (subtotal !== null && subtotal !== undefined) {
                 const udpTotalSp = await models.m_pengadaan.update(
                     {
-                        total_keseluruhan: total,
+                        subtotal: subtotal,
+                        total_keseluruhan: totalKeseluruhan,
                         biaya_muat: biayaMuat,
                         biaya_muat_bongkar: biayBongkar,
                         overtonase: maxTonase,
