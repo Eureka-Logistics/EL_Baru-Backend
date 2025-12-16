@@ -24,6 +24,7 @@ router.post('/create-customer-invoice', authentication, customerController.creat
 router.post('/edit-customer-invoice', authentication, customerController.editInovoiceAddress);
 
 router.get('/get-report-customer', authentication, customerController.getReportCustomer);
+router.get('/export-report-customer-excel', authentication, customerController.exportReportCustomerExcel);
 router.get('/get-bu-customer', authentication, customerController.getBuReport);
 
 router.get('/get-customer-all', customerController.getCustomerAll);

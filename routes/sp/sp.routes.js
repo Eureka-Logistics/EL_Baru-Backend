@@ -78,6 +78,7 @@ router.post('/reject-purch', authentication, spController.rejectPurch);
 //sales,ops,akunting
 router.get('/get-SP-all-filter', authentication, spController.getFilterSp);
 router.get('/get-SP-all', authentication, spController.getSpListAll2);
+router.get('/export-sp-list-excel', authentication, spController.exportSpListExcel);
 router.get('/get-SP-all-approve', authentication, spController.getSpListApprove);
 router.get('/get-SP-all-detail', authentication, spController.getSpListAllDetail);
 

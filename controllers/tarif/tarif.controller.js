@@ -3,6 +3,7 @@ const models = core.models();
 const customErrorMiddleware = require('../../middleware/middleware.result');
 const { Op, Sequelize, where } = require('sequelize');
 const db = require('../../config/db.config')
+const ExcelJS = require('exceljs');
 
 
 exports.getSelectTarif = async (req, res) => {
@@ -1052,6 +1053,245 @@ exports.getTarifCustomer = async (req, res) => {
         res.status(output.status.code).send(output)
     } else {
         res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+// Export Excel Tarif Customer
+exports.exportTarifCustomerExcel = async (req, res) => {
+    try {
+        // Associations
+        if (!models.m_tarif_customer.associations.kotaAsal) {
+            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
+        }
+        if (!models.m_tarif_customer.associations.kotaTujuan) {
+            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_tujuan_kota', as: 'kotaTujuan' });
+        }
+        models.m_tarif_customer.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
+        models.m_tarif_customer.belongsTo(models.kendaraan_jenis, { targetKey: 'id_kendaraan_jenis', foreignKey: 'id_kendaraan_jenis' });
+        models.m_tarif_customer.belongsTo(models.m_bu, { targetKey: 'id_bu', foreignKey: 'id_bu' });
+
+        const getUser = await models.users.findOne({ where: { id: req.user.id } });
+        if (!getUser) {
+            return res.status(401).json({
+                status: { code: 401, message: 'Unauthorized' }
+            });
+        }
+
+        // Ambil semua data (tanpa pagination) sesuai filter
+        const tarifRows = await models.m_tarif_customer.findAll({
+            order: [['id_tarif_customer', 'desc']],
+            where: {
+                ...(req.query.status ? { status: req.query.status } : {}),
+                ...req.query.keyword ? {
+                    [Op.or]: [
+                        { kode_tarif_customer: { [Op.like]: `%${req.query.keyword}%` } },
+                        { kode_surat:           { [Op.like]: `%${req.query.keyword}%` } },
+                        { jenis_kiriman:        { [Op.like]: `%${req.query.keyword}%` } },
+                        { via:                  { [Op.like]: `%${req.query.keyword}%` } },
+                        { service_type:         { [Op.like]: `%${req.query.keyword}%` } }
+                    ]
+                } : {},
+                ...(req.query.id_muat_kota ? { id_muat_kota: req.query.id_muat_kota } : {}),
+                ...(req.query.id_tujuan_kota ? { id_tujuan_kota: req.query.id_tujuan_kota } : {}),
+                ...(req.query.id_kendaraan_jenis ? { id_kendaraan_jenis: req.query.id_kendaraan_jenis } : {}),
+                ...(req.query.id_customer ? { id_customer: req.query.id_customer } : {}),
+                ...(req.query.id_bu ? { id_bu: req.query.id_bu } : {}),
+            },
+            include: [
+                { model: models.m_wil_kota, as: 'kotaAsal', attributes: ['nama_kota'] },
+                { model: models.m_wil_kota, as: 'kotaTujuan', attributes: ['nama_kota'] },
+                { model: models.customer, attributes: ['nama_perusahaan'] },
+                { model: models.kendaraan_jenis, attributes: ['nama_kendaraan_jenis'] },
+                { model: models.m_bu, attributes: ['name_bu', 'code_bu'] },
+            ]
+        });
+
+        // Siapkan data Excel
+        const rows = [];
+        let no = 1;
+
+        tarifRows.forEach((item) => {
+            rows.push({
+                no: no++,
+                kode_tarif: item.kode_tarif_customer || '',
+                status: item.status || '',
+                pelanggan: item.customer?.nama_perusahaan || '',
+                service: item.service_type || item.jenis_kiriman || '',
+                muat: item.kotaAsal?.nama_kota || '',
+                bongkar: item.kotaTujuan?.nama_kota || '',
+                jenis_kendaraan: item.kendaraan_jeni?.nama_kendaraan_jenis || item.kendaraan_jenis?.nama_kendaraan_jenis || '',
+                bisnis_unit: item.m_bu?.name_bu || item.m_bu?.code_bu || '',
+                date_created: item.date_created ? core.moment(item.date_created).format('YYYY-MM-DD HH:mm:ss') : '',
+                biaya_kirim: item.biaya_jalan || item.total_biaya || 0,
+                via: item.via || ''
+            });
+        });
+
+        // Buat workbook
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Tarif Customer');
+
+        worksheet.columns = [
+            { header: 'No', key: 'no', width: 6 },
+            { header: 'Kode Tarif', key: 'kode_tarif', width: 18 },
+            { header: 'Status', key: 'status', width: 10 },
+            { header: 'Pelanggan', key: 'pelanggan', width: 32 },
+            { header: 'Service', key: 'service', width: 14 },
+            { header: 'Muat', key: 'muat', width: 24 },
+            { header: 'Bongkar', key: 'bongkar', width: 24 },
+            { header: 'Jenis Kendaraan', key: 'jenis_kendaraan', width: 18 },
+            { header: 'Bisnis Unit', key: 'bisnis_unit', width: 16 },
+            { header: 'Date Created', key: 'date_created', width: 20 },
+            { header: 'Biaya Kirim', key: 'biaya_kirim', width: 16 },
+            { header: 'Via', key: 'via', width: 10 },
+        ];
+
+        // Header styling
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Format biaya_kirim as currency text (Rp ...)
+        rows.forEach((row) => {
+            const displayRow = { ...row };
+            const biaya = Number(row.biaya_kirim) || 0;
+            displayRow.biaya_kirim = `Rp ${biaya.toLocaleString('id-ID')}`;
+            worksheet.addRow(displayRow);
+        });
+
+        const filename = `tarif_customer_${core.moment().format('YYYYMMDD_HHmmss')}.xlsx`;
+
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error('Error exportTarifCustomerExcel:', error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                status: { code: 500, message: error.message }
+            });
+        }
+    }
+}
+
+// Export Excel Tarif Eureka
+exports.exportTarifEurekaExcel = async (req, res) => {
+    try {
+        // Associations
+        if (!models.m_tarif_eureka.associations.kotaAsal) {
+            models.m_tarif_eureka.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
+        }
+        if (!models.m_tarif_eureka.associations.kotaTujuan) {
+            models.m_tarif_eureka.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_tujuan_kota', as: 'kotaTujuan' });
+        }
+        models.m_tarif_eureka.belongsTo(models.kendaraan_jenis, { targetKey: 'id_kendaraan_jenis', foreignKey: 'id_kendaraan_jenis' });
+        models.m_tarif_eureka.belongsTo(models.m_bu, { targetKey: 'id_bu', foreignKey: 'id_bu' });
+
+        const getUser = await models.users.findOne({ where: { id: req.user.id } });
+        if (!getUser) {
+            return res.status(401).json({
+                status: { code: 401, message: 'Unauthorized' }
+            });
+        }
+
+        const whereClause = {
+            status: 'Y',
+            ...(req.query.id_price ? { id_price: req.query.id_price } : {}),
+            ...(req.query.id_muat_kota ? { id_muat_kota: req.query.id_muat_kota } : {}),
+            ...(req.query.id_tujuan_kota ? { id_tujuan_kota: req.query.id_tujuan_kota } : {}),
+            ...(req.query.id_kendaraan_jenis ? { id_kendaraan_jenis: req.query.id_kendaraan_jenis } : {}),
+            ...(req.query.id_bu ? { id_bu: req.query.id_bu } : {}),
+            ...(req.query.keyword ? {
+                [Op.or]: [
+                    { jenis_kiriman: { [Op.like]: `%${req.query.keyword}%` } },
+                    { service_type: { [Op.like]: `%${req.query.keyword}%` } }
+                ]
+            } : {})
+        };
+
+        const rowsDb = await models.m_tarif_eureka.findAll({
+            where: whereClause,
+            order: [['id_tarif_eureka', 'desc']],
+            include: [
+                { model: models.m_wil_kota, as: 'kotaAsal', attributes: ['nama_kota'] },
+                { model: models.m_wil_kota, as: 'kotaTujuan', attributes: ['nama_kota'] },
+                { model: models.kendaraan_jenis, attributes: ['nama_kendaraan_jenis'] },
+                { model: models.m_bu, attributes: ['name_bu', 'code_bu'] },
+            ]
+        });
+
+        const excelRows = [];
+        let no = 1;
+        rowsDb.forEach((item) => {
+            excelRows.push({
+                no: no++,
+                jenis_kiriman: item.jenis_kiriman || '',
+                service_type: item.service_type || '',
+                muat: item.kotaAsal?.nama_kota || '',
+                tujuan: item.kotaTujuan?.nama_kota || '',
+                jenis_kendaraan: item.kendaraan_jeni?.nama_kendaraan_jenis || item.kendaraan_jenis?.nama_kendaraan_jenis || '',
+                satuan: item.satuan || '',
+                uang_jalan: item.uang_jalan || 0,
+                maintenance_cost: item.maintenance_cost || 0,
+                fixed_cost: item.fixed_cost || 0,
+                max_tonase: item.max_tonase || 0,
+                amount: item.amount || 0,
+                percent: item.percent || 0,
+                tarif: item.tarif || 0,
+                harga: item.nett_price || 0,
+                date_create: item.date_created ? core.moment(item.date_created).format('YYYY-MM-DD HH:mm:ss') : '',
+                bisnis_unit: item.m_bu?.name_bu || item.m_bu?.code_bu || ''
+            });
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Tarif Eureka');
+        worksheet.columns = [
+            { header: 'No.', key: 'no', width: 6 },
+            { header: 'Jenis Kiriman', key: 'jenis_kiriman', width: 14 },
+            { header: 'Service Type', key: 'service_type', width: 14 },
+            { header: 'Muat', key: 'muat', width: 20 },
+            { header: 'Tujuan', key: 'tujuan', width: 20 },
+            { header: 'Jenis Kendaraan', key: 'jenis_kendaraan', width: 16 },
+            { header: 'Satuan', key: 'satuan', width: 10 },
+            { header: 'Uang Jalan', key: 'uang_jalan', width: 14 },
+            { header: 'Maintenance Cost', key: 'maintenance_cost', width: 16 },
+            { header: 'Fixed Cost', key: 'fixed_cost', width: 12 },
+            { header: 'Max Tonase(kg/koli)', key: 'max_tonase', width: 18 },
+            { header: 'Amount', key: 'amount', width: 14 },
+            { header: 'Percent', key: 'percent', width: 10 },
+            { header: 'Tarif', key: 'tarif', width: 14 },
+            { header: 'Harga', key: 'harga', width: 14 },
+            { header: 'Date Create', key: 'date_create', width: 20 },
+            { header: 'Bisnis Unit', key: 'bisnis_unit', width: 18 },
+        ];
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        excelRows.forEach((row) => worksheet.addRow(row));
+
+        const filename = `tarif_eureka_${core.moment().format('YYYYMMDD_HHmmss')}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error('Error exportTarifEurekaExcel:', error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                status: { code: 500, message: error.message }
+            });
+        }
     }
 }
 // exports.getTarifCustomer = async (req, res) => {

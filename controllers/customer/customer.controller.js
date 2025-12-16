@@ -2,6 +2,7 @@ const core = require('../../config/core.config')
 const models = core.models();
 const customErrorMiddleware = require('../../middleware/middleware.result');
 const { Op, Sequelize, where } = require('sequelize');
+const ExcelJS = require('exceljs');
 
 exports.getCustomer = async (req, res) => {
     try {
@@ -1496,27 +1497,16 @@ exports.getReportCustomer = async (req, res) => {
 
 
 
-        // if (!models.m_pengadaan_detail.associations.kotaTujuan) {
-        //     models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar', as: 'kotaTujuan' });
-        // }
-        if (!models.m_pengadaan.associations.gl) {
-            models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_gl', as: 'gl' });
+        // Setup associations for m_pengadaan_detail
+        if (!models.m_pengadaan_detail.associations.muat) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_almuat', as: 'muat' });
         }
-        if (!models.m_pengadaan.associations.asm) {
-            models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_asm', as: 'asm' });
+        if (!models.m_pengadaan_detail.associations.bongkar) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar', as: 'bongkar' });
         }
-        if (!models.m_pengadaan.associations.mgr) {
-            models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_mgr', as: 'mgr' });
+        if (!models.m_pengadaan_detail.associations.m_sm) {
+            models.m_pengadaan_detail.hasMany(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
         }
-        if (!models.m_pengadaan.associations.kacab) {
-            models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_kacab', as: 'kacab' });
-        }
-        if (!models.m_pengadaan.associations.amd) {
-            models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_amd', as: 'amd' });
-        }
-
-        // models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_almuat' });
-        // models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
 
 
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
@@ -1531,54 +1521,39 @@ exports.getReportCustomer = async (req, res) => {
         )
         if (getUser) {
 
-            const startDate = core.moment(req.query.startDate); // Tanggal awal dalam format yang sesuai
-            const endDate = core.moment(req.query.endDate);
+            // Format tanggal seperti PHP: Y-m-d 00:00:00 sampai Y-m-d 23:59:59
+            const dateFirst = req.query.date_first || req.query.startDate;
+            const dateUntil = req.query.date_until || req.query.endDate;
+            
+            let startDate, endDate;
+            if (dateFirst && dateUntil) {
+                startDate = core.moment(dateFirst).format('YYYY-MM-DD 00:00:00');
+                endDate = core.moment(dateUntil).format('YYYY-MM-DD 23:59:59');
+            }
 
             const getData = await models.m_pengadaan.findAndCountAll(
                 {
                     order: [['id_mp', 'desc']],
-                    // ...req.query.statusSP ? {
                     where: {
-                        tgl_order: {
-                            [Op.gte]: new Date(new Date().getFullYear(), 0, 1)
-                        },
+                        ...dateFirst && dateUntil ? {
+                            tgl_pickup: {
+                                [Op.between]: [startDate, endDate],
+                            }
+                        } : {},
+
+                        ...req.query.kodecbg || req.query.cabang ? {
+                            msp: { [Op.like]: `%${req.query.kodecbg || req.query.cabang}%` }
+                        } : {},
+
+                        ...req.query.customer_id || req.query.customerId ? {
+                            id_customer: req.query.customer_id || req.query.customerId
+                        } : {},
 
                         ...req.query.keyword ? {
                             msp: {
                                 [Op.like]: `%${req.query.keyword}%`
                             },
                         } : {},
-
-                        // ...req.query.tglPickup ? {
-                        //     tgl_pickup: req.query.tglPickup
-                        // } : {},
-                        ...req.query.tglBongkar ? {
-                            tgl_bongkar: req.query.tglBongkar
-                        } : {},
-
-                        ...req.query.customerId ? {
-                            id_customer: req.query.customerId
-                        } : {},
-                        ...req.query.cabang ? {
-                            msp: { [Op.like]: `%${req.query.cabang}` }
-                        } : {},
-                        // `...req.query.sales ? {
-                        //     id_sales: req.query.sales
-                        // } : {},`
-                        ...req.query.startDate && req.query.endDate ? {
-                            tgl_pickup: {
-                                [Op.between]: [startDate, endDate],
-                            }
-                        } : {},
-                        ...req.query.statusSP ? { status: req.query.statusSP } : {},
-                        // [Op.and]: [
-                        //     // Sequelize.where(Sequelize.col('m_status_order.purchasing'), {
-                        //     //     [Op.ne]: 0
-                        //     // }),
-                        //     Sequelize.where(Sequelize.col('m_status_order.kendaraan_purchasing'), '=', 'Y')
-                        // ]
-
-
                     },
                     // } : {},
                     // group: 'msp',
@@ -1590,99 +1565,67 @@ exports.getReportCustomer = async (req, res) => {
                         {
                             model: models.users,
                             as: "salesName",
-                            // required: true,
                             where: {
                                 ...req.query.buId ? {
                                     id_bu: req.query.buId
                                 } : {},
-                                ...req.query.bubrenchId ? {
-                                    id_bu_brench: req.query.bubrenchId
+                                ...req.query.bubrenchId || req.query.sales_brench ? {
+                                    id_bu_brench: req.query.bubrenchId || req.query.sales_brench
                                 } : {},
                                 ...req.query.sales ? {
                                     nama_lengkap: req.query.sales
                                 } : {},
                             },
-                            attributes: ['nama_lengkap']
+                            attributes: ['nama_lengkap', 'id']
                         },
                         {
                             model: models.users,
                             as: "adminName",
-                            // required: true,
-                            // where: {
-                            //     ...req.query.buId ? {
-                            //         id_bu: req.query.buId
-                            //     } : {},
-                            // },
-                            // attributes: ['nama_lengkap']
+                            attributes: ['nama_lengkap']
                         },
                         {
                             model: models.customer,
                             required: false,
-
-
+                            attributes: ['nama_perusahaan', 'id_customer']
                         },
                         {
                             model: models.m_pengadaan_detail,
                             required: false,
-                            // include: [
-                            //     {
-                            //         model: models.alamat,
-                            //         as: 'kotaAsal',
-                            //         attributes: ['kota'],
-                            //         // where: { id: { [Op.in]: bongkar } }
-                            //     },
-                            //     {
-                            //         model: models.alamat,
-                            //         as: 'kotaTujuan',
-                            //         attributes: ['kota'],
-                            //         // where: { id: { [Op.in]: muat } }
-                            //     }
-                            // ]
-
+                            include: [
+                                {
+                                    model: models.alamat,
+                                    as: 'muat',
+                                    required: false,
+                                    attributes: ['kota', 'id']
+                                },
+                                {
+                                    model: models.alamat,
+                                    as: 'bongkar',
+                                    required: false,
+                                    attributes: ['kota', 'id']
+                                },
+                                {
+                                    model: models.m_sm,
+                                    required: false,
+                                    attributes: ['msm', 'id_msm']
+                                }
+                            ]
                         },
-
                         {
                             model: models.m_status_order,
                             required: true,
                             where: {
-                                purchasing: {
-                                    [Op.ne]: 0
-                                },
-                                kendaraan_purchasing: "Y",
+                                [Op.or]: [
+                                    { kendaraan_operasional: 'Y' },
+                                    { kendaraan_purchasing: 'Y' }
+                                ]
                             },
-
                             include: [
-                                { model: models.users }
+                                { 
+                                    model: models.users,
+                                    attributes: ['nama_lengkap']
+                                }
                             ]
-
-                        },
-                        {
-                            model: models.m_bu_employee,
-                            as: 'gl',
-                            attributes: ['fullname']
-                        },
-                        {
-                            model: models.m_bu_employee,
-                            as: 'asm',
-                            attributes: ['fullname']
-                        },
-                        {
-                            model: models.m_bu_employee,
-                            as: 'mgr',
-                            attributes: ['fullname']
-
-                        },
-                        {
-                            model: models.m_bu_employee,
-                            as: 'kacab',
-                            attributes: ['fullname']
-
-                        },
-                        {
-                            model: models.m_bu_employee,
-                            as: 'amd',
-                            attributes: ['fullname']
-
                         },
                     ]
 
@@ -1690,71 +1633,154 @@ exports.getReportCustomer = async (req, res) => {
             )
 
 
+            const currentPage = Number(req.query.page) || 1; // Halaman saat ini
+            const itemsPerPage = Number(req.query.limit) || 10; // Jumlah item per halaman (default 10)
+            const startIndex = (currentPage - 1) * itemsPerPage + 1;
+            
+            // Total data dari query (sebelum filtering di JavaScript)
+            const totalDataFromQuery = getData.count || 0;
+
             if (getData.rows) {
+                let sub_total = 0;
+                let sub_totaldb = 0;
+                let resultIndex = 0;
 
-                const currentPage = Number(req.query.page) || 1; // Halaman saat ini
-                const itemsPerPage = Number(req.query.limit) || 10; // Jumlah item per halaman
-                const startIndex = (currentPage - 1) * itemsPerPage + 1;
+                const result = getData.rows.map((item, index) => {
+                    // Filter hanya yang kendaraan_operasional == 'Y' OR kendaraan_purchasing == 'Y'
+                    // Note: Sebenarnya sudah difilter di query level, tapi tetap cek untuk safety
+                    if (item.m_status_order && 
+                        item.m_status_order.kendaraan_operasional !== 'Y' && 
+                        item.m_status_order.kendaraan_purchasing !== 'Y') {
+                        return null;
+                    }
 
-                // let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
-                const result = await Promise.all(getData.rows.map(async (item, index) => {
-                    const bongkar = item.m_pengadaan_details.map((i) => i.id_albongkar);
-                    const muat = item.m_pengadaan_details.map((i) => i.id_almuat);
-                    const kendaraan = item.m_pengadaan_details.map((i) => i.kendaraan);
-                    // console.log("🚀 ~ file: sp.controller.js:4728 ~ result ~ bongkar:", bongkar.slice(-1).pop())
-                    // var bongkaranId
-                    const getBongkar = await models.alamat.findOne({
-                        ...bongkar.slice(-1).pop() != undefined ? {
-                            where: {
-                                id: bongkar.slice(-1).pop()
+                    // Format destination seperti PHP: komut->kota dan msm untuk setiap detail
+                    let destinationStr = '';
+                    const details = item.m_pengadaan_details || [];
+                    if (details.length > 0) {
+                        const destinationParts = [];
+                        for (const detail of details) {
+                            const kotaMuat = detail.muat?.kota || '';
+                            const kotaBongkar = detail.bongkar?.kota || '';
+                            const msm = detail.m_sms && detail.m_sms.length > 0 ? detail.m_sms[0].msm : '';
+                            
+                            if (kotaMuat && kotaBongkar) {
+                                destinationParts.push(`${kotaMuat}->${kotaBongkar}`);
                             }
-                        } : ""
-                    });
-                    const getMuat = await models.alamat.findOne({
-                        ...muat[0] != undefined ? {
-                            where: {
-                                id: muat[0]
+                            if (msm) {
+                                destinationParts.push(msm);
                             }
-                        } : ""
-                    });
-                    const destination = getMuat?.kota + " - " + getBongkar?.kota;
+                        }
+                        destinationStr = destinationParts.join('\n');
+                    }
 
+                    // Hitung price_perhitungan berdasarkan logika createDetailSp
+                    // sum(((harga * jumlah)+semua biaya)-diskon)+pajak dari table m_pengadaan_detail
+                    let price_perhitungan = 0;
+                    if (details.length > 0) {
+                        for (const detail of details) {
+                            // totalProduk = harga * jumlah
+                            const totalProduk = (detail.harga || 0) * (detail.jumlah || 0);
+                            
+                            // Semua biaya dari detail
+                            const semuaBiaya = (detail.biaya_overtonase || 0) + 
+                                             (detail.harga_muat || 0) + 
+                                             (detail.harga_bongkar || 0) + 
+                                             (detail.biaya_multidrop || 0) + 
+                                             (detail.biaya_lain || 0) + 
+                                             (detail.biaya_mel || 0) + 
+                                             (detail.biaya_tambahan || 0) + 
+                                             (detail.biaya_multimuat || 0);
+                            
+                            // subtotalDetail = totalProduk + semua biaya
+                            const subtotalDetail = totalProduk + semuaBiaya;
+                            
+                            // Hitung diskon
+                            const diskonPersen = detail.diskon || 0;
+                            const diskonNilai = diskonPersen ? (diskonPersen / 100) * subtotalDetail : 0;
+                            
+                            // baseAmount = subtotalDetail - diskonNilai
+                            const baseAmount = subtotalDetail - diskonNilai;
+                            
+                            // Hitung pajak
+                            const pajakPersen = detail.pajak || 0;
+                            const pajakNilai = pajakPersen ? (pajakPersen / 100) * baseAmount : 0;
+                            
+                            // total = baseAmount + pajakNilai
+                            const total = baseAmount + pajakNilai;
+                            
+                            // Sum untuk price_perhitungan
+                            price_perhitungan += total;
+                        }
+                    }
 
+                    // pricereal diambil dari total_keseluruhan di table m_pengadaan
+                    const pricereal = item.total_keseluruhan || 0;
 
-                    return {
-                        no: startIndex + index,
+                    // Hitung selisih
+                    const selisih_total = price_perhitungan - pricereal;
+
+                    // Update total untuk summary langsung di sini
+                    sub_total += price_perhitungan;
+                    sub_totaldb += pricereal;
+
+                    // Tentukan status seperti PHP
+                    let statusText = '';
+                    if (item.status === '0') {
+                        statusText = 'DO Cancel';
+                    } else {
+                        let alto = '';
+                        let altp = '';
+                        
+                        if (item.m_status_order?.operasional === '0' || !item.m_status_order?.operasional) {
+                            alto = 'ops waiting';
+                        } else {
+                            alto = item.m_status_order?.kendaraan_operasional === 'Y' ? 'Ops Ready' : 'Ops No Ready';
+                        }
+
+                        if (item.m_status_order?.purchasing === '0' || !item.m_status_order?.purchasing) {
+                            altp = 'purch waiting';
+                        } else {
+                            altp = item.m_status_order?.kendaraan_purchasing === 'Y' ? 'Purch Ready' : 'Purch No Ready';
+                        }
+                        statusText = `${alto} dan ${altp}`;
+                    }
+
+                    const kendaraan = details.length > 0 ? details[0].kendaraan : '-';
+
+                    const resultItem = {
+                        no: startIndex + resultIndex++,
                         idmp: item.id_mp,
                         sp: item.msp,
                         spk: item.mspk,
                         salesName: item.salesName == null ? "-" : item.salesName.nama_lengkap,
                         adminName: item.adminName == null ? "-" : item.adminName.nama_lengkap,
-                        jenisBarang: item.jenis_barang,
-                        via: item.via,
-                        starus: item.status == 1 ? "Aktif" : "Tidak Aktif",
-                        orderDate: item.tgl_order,
-                        pickupDate: item.tgl_pickup,
-                        perusahaan: item.customer?.nama_perusahaan,
-                        kendaraan: kendaraan[0] == null ? "-" : kendaraan[0],
-                        service: item.service,
-                        pickupDate: core.moment(item.tgl_pickup).format('YYYY-MM-DD HH:mm:ss'),
-                        approveSales: item.m_status_order?.act_sales,
-                        dateApproveSales: core.moment(item.m_status_order?.tgl_act_1).format('YYYY-MM-DD HH:mm:ss'),
-                        approveAct: item.m_status_order?.act_akunting,
-                        dateApproveAct: core.moment(item.m_status_order?.tgl_act_3).format('YYYY-MM-DD HH:mm:ss'),
-                        approveOps: item.m_status_order?.kendaraan_operasional,
-                        idops: item.m_status_order?.operasional,
-                        operationalName: item.m_status_order?.user == null ? "" : item.m_status_order.user.nama_lengkap,
-                        dateApproveOps: core.moment(item.m_status_order?.tgl_act_4).format('YYYY-MM-DD HH:mm:ss'),
-                        approvePurch: item.m_status_order?.kendaraan_purchasing,
-                        dateApprovePurch: core.moment(item.m_status_order?.tgl_act_5).format('YYYY-MM-DD HH:mm:ss'),
-                        destination: destination,
-                        biaya: item.total_keseluruhan,
-
+                        perusahaan: item.customer?.nama_perusahaan || '-',
+                        destination: destinationStr || '-',
+                        pickupDate: item.tgl_pickup ? core.moment(item.tgl_pickup).format('DD-MM-YYYY') : '-',
+                        orderDate: item.tgl_order ? core.moment(item.tgl_order).format('DD-MM-YYYY') : '-',
+                        kendaraan: kendaraan,
+                        price_perhitungan: price_perhitungan,
+                        pricereal: pricereal,
+                        selisih: selisih_total,
+                        hasSelisih: selisih_total !== 0,
+                        status: item.status,
+                        statusText: statusText,
+                        kendaraan_operasional: item.m_status_order?.kendaraan_operasional || '',
+                        kendaraan_purchasing: item.m_status_order?.kendaraan_purchasing || '',
+                        id_sales: item.id_sales || ''
                     };
-                }));
-                const searchTerm = req.query.destination || "";
-                const searchResults = result.filter(item => item.destination.toLowerCase().includes(searchTerm.toLowerCase()));
 
+                    return resultItem;
+                });
+
+                // Filter out null results
+                const filteredResult = result.filter(item => item !== null);
+
+                // Hitung totalData dan totalPage dari query count
+                const totalData = totalDataFromQuery;
+                const totalPage = Math.ceil(totalData / itemsPerPage);
+                const canLoadMore = currentPage < totalPage;
 
                 output = {
                     status: {
@@ -1762,11 +1788,41 @@ exports.getReportCustomer = async (req, res) => {
                         message: 'Success get Data'
                     },
                     data: {
-                        totalData: getData.count,
-                        totalPage: Math.ceil(getData.count / req.query.limit),
-                        limit: Number(req.query.limit),
-                        currentPage: Number(req.query.page),
-                        order: searchTerm ? searchResults : result
+                        totalData: totalData,
+                        totalPage: totalPage,
+                        limit: itemsPerPage,
+                        currentPage: currentPage,
+                        canLoadMore: canLoadMore,
+                        order: filteredResult,
+                        summary: {
+                            sub_total: sub_total,
+                            sub_totaldb: sub_totaldb,
+                            selisih_total: sub_total - sub_totaldb
+                        }
+                    }
+                };
+            } else {
+                const totalData = getData.count || 0;
+                const totalPage = Math.ceil(totalData / itemsPerPage);
+                const canLoadMore = currentPage < totalPage;
+                
+                output = {
+                    status: {
+                        code: 200,
+                        message: 'Success get Data'
+                    },
+                    data: {
+                        totalData: totalData,
+                        totalPage: totalPage,
+                        limit: itemsPerPage,
+                        currentPage: currentPage,
+                        canLoadMore: canLoadMore,
+                        order: [],
+                        summary: {
+                            sub_total: 0,
+                            sub_totaldb: 0,
+                            selisih_total: 0
+                        }
                     }
                 };
             }
@@ -1864,6 +1920,451 @@ exports.getCustomerAll = async (req, res) => {
       }
     });
   }
+};
+
+exports.exportReportCustomerExcel = async (req, res) => {
+    try {
+        // Setup associations (sama dengan getReportCustomer)
+        if (!models.m_pengadaan.associations.salesName) {
+            models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales', as: 'salesName' });
+        }
+        if (!models.m_pengadaan.associations.adminName) {
+            models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_admin', as: 'adminName' });
+        }
+        models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
+        models.m_pengadaan.belongsTo(models.m_status_order, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        models.m_pengadaan.hasMany(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+
+        // Setup associations for m_pengadaan_detail
+        if (!models.m_pengadaan_detail.associations.muat) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_almuat', as: 'muat' });
+        }
+        if (!models.m_pengadaan_detail.associations.bongkar) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar', as: 'bongkar' });
+        }
+        if (!models.m_pengadaan_detail.associations.m_sm) {
+            models.m_pengadaan_detail.hasMany(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
+        }
+
+        const getUser = await models.users.findOne({
+            where: {
+                id: req.user.id
+            }
+        });
+
+        if (!getUser) {
+            return res.status(401).json({
+                status: {
+                    code: 401,
+                    message: 'Unauthorized'
+                }
+            });
+        }
+
+        // Format tanggal
+        const dateFirst = req.query.date_first || req.query.startDate;
+        const dateUntil = req.query.date_until || req.query.endDate;
+        
+        let startDate, endDate;
+        if (dateFirst && dateUntil) {
+            startDate = core.moment(dateFirst).format('YYYY-MM-DD 00:00:00');
+            endDate = core.moment(dateUntil).format('YYYY-MM-DD 23:59:59');
+        }
+
+        // Query data tanpa pagination
+        const getData = await models.m_pengadaan.findAll({
+            order: [['id_mp', 'desc']],
+            where: {
+                ...dateFirst && dateUntil ? {
+                    tgl_pickup: {
+                        [Op.between]: [startDate, endDate],
+                    }
+                } : {},
+
+                ...req.query.kodecbg || req.query.cabang ? {
+                    msp: { [Op.like]: `%${req.query.kodecbg || req.query.cabang}%` }
+                } : {},
+
+                ...req.query.customer_id || req.query.customerId ? {
+                    id_customer: req.query.customer_id || req.query.customerId
+                } : {},
+
+                ...req.query.keyword ? {
+                    msp: {
+                        [Op.like]: `%${req.query.keyword}%`
+                    },
+                } : {},
+            },
+            include: [
+                {
+                    model: models.users,
+                    as: "salesName",
+                    where: {
+                        ...req.query.buId ? {
+                            id_bu: req.query.buId
+                        } : {},
+                        ...req.query.bubrenchId || req.query.sales_brench ? {
+                            id_bu_brench: req.query.bubrenchId || req.query.sales_brench
+                        } : {},
+                        ...req.query.sales ? {
+                            nama_lengkap: req.query.sales
+                        } : {},
+                    },
+                    attributes: ['nama_lengkap', 'id']
+                },
+                {
+                    model: models.users,
+                    as: "adminName",
+                    attributes: ['nama_lengkap']
+                },
+                {
+                    model: models.customer,
+                    required: false,
+                    attributes: ['nama_perusahaan', 'id_customer']
+                },
+                {
+                    model: models.m_pengadaan_detail,
+                    required: false,
+                    attributes: ['kendaraan', 'kendaraan_mitra', 'id_mpd'],
+                    include: [
+                        {
+                            model: models.alamat,
+                            as: 'muat',
+                            required: false,
+                            attributes: ['kota', 'alamat', 'alamat_detail', 'kecamatan']
+                        },
+                        {
+                            model: models.alamat,
+                            as: 'bongkar',
+                            required: false,
+                            attributes: ['kota', 'alamat', 'alamat_detail', 'kecamatan']
+                        },
+                        {
+                            model: models.m_sm,
+                            required: false,
+                            attributes: ['msm', 'id_msm']
+                        }
+                    ]
+                },
+                {
+                    model: models.m_status_order,
+                    required: true,
+                    where: {
+                        [Op.or]: [
+                            { kendaraan_operasional: 'Y' },
+                            { kendaraan_purchasing: 'Y' }
+                        ]
+                    }
+                },
+            ]
+        });
+
+        // Prepare Excel data dengan tracking untuk merge cells
+        const excelRows = [];
+        const mergeRanges = []; // Untuk menyimpan range merge
+        let rowNo = 1; // Dimulai dari 1 sesuai permintaan
+        let currentExcelRow = 2; // Baris Excel dimulai dari 2 (setelah header)
+
+        for (const item of getData) {
+            // Filter hanya yang kendaraan_operasional == 'Y' OR kendaraan_purchasing == 'Y'
+            if (item.m_status_order && 
+                item.m_status_order.kendaraan_operasional !== 'Y' && 
+                item.m_status_order.kendaraan_purchasing !== 'Y') {
+                continue;
+            }
+
+            const details = item.m_pengadaan_details || [];
+            
+            // Hitung total SM untuk menentukan berapa baris yang akan di-merge
+            let totalSms = 0;
+            for (const detail of details) {
+                const sms = detail.m_sms || [];
+                totalSms += sms.length;
+            }
+            
+            // Jika tidak ada SM, tetap buat 1 baris
+            if (totalSms === 0) totalSms = 1;
+            
+            const startRow = currentExcelRow;
+            const endRow = currentExcelRow + totalSms - 1;
+            
+            // Hitung price_perhitungan
+            let price_perhitungan = 0;
+            if (details.length > 0) {
+                for (const detail of details) {
+                    const totalProduk = (detail.harga || 0) * (detail.jumlah || 0);
+                    const semuaBiaya = (detail.biaya_overtonase || 0) + 
+                                     (detail.harga_muat || 0) + 
+                                     (detail.harga_bongkar || 0) + 
+                                     (detail.biaya_multidrop || 0) + 
+                                     (detail.biaya_lain || 0) + 
+                                     (detail.biaya_mel || 0) + 
+                                     (detail.biaya_tambahan || 0) + 
+                                     (detail.biaya_multimuat || 0);
+                    const subtotalDetail = totalProduk + semuaBiaya;
+                    const diskonPersen = detail.diskon || 0;
+                    const diskonNilai = diskonPersen ? (diskonPersen / 100) * subtotalDetail : 0;
+                    const baseAmount = subtotalDetail - diskonNilai;
+                    const pajakPersen = detail.pajak || 0;
+                    const pajakNilai = pajakPersen ? (pajakPersen / 100) * baseAmount : 0;
+                    const total = baseAmount + pajakNilai;
+                    price_perhitungan += total;
+                }
+            }
+
+            const pricereal = item.total_keseluruhan || 0;
+
+            // Ambil detail pertama untuk baris utama
+            const firstDetail = details.length > 0 ? details[0] : null;
+            const firstMsm = firstDetail && firstDetail.m_sms && firstDetail.m_sms.length > 0 
+                ? firstDetail.m_sms[0].msm 
+                : '';
+
+            // Format alamat muat (lengkap dengan semua bagian)
+            let alamatMuat = '';
+            if (firstDetail && firstDetail.muat) {
+                const muat = firstDetail.muat;
+                const parts = [];
+                if (muat.alamat) parts.push(muat.alamat);
+                if (muat.alamat_detail) parts.push(muat.alamat_detail);
+                if (muat.kecamatan) parts.push(muat.kecamatan);
+                if (muat.kota) parts.push(muat.kota);
+                alamatMuat = parts.join(', ').trim();
+            }
+
+            // Format alamat bongkar (lengkap dengan semua bagian)
+            let alamatBongkar = '';
+            if (firstDetail && firstDetail.bongkar) {
+                const bongkar = firstDetail.bongkar;
+                const parts = [];
+                if (bongkar.alamat) parts.push(bongkar.alamat);
+                if (bongkar.alamat_detail) parts.push(bongkar.alamat_detail);
+                if (bongkar.kecamatan) parts.push(bongkar.kecamatan);
+                if (bongkar.kota) parts.push(bongkar.kota);
+                alamatBongkar = parts.join(', ').trim();
+            }
+
+            // Format tujuan
+            let tujuan = '';
+            if (firstDetail && firstDetail.muat && firstDetail.bongkar) {
+                const kotaMuat = firstDetail.muat.kota || '';
+                const kotaBongkar = firstDetail.bongkar.kota || '';
+                if (kotaMuat && kotaBongkar) {
+                    tujuan = `${kotaMuat}->${kotaBongkar}`;
+                }
+            }
+
+            // Tentukan status seperti di getReportCustomer
+            let statusText = '';
+            if (item.status === '0') {
+                statusText = 'DO Cancel';
+            } else {
+                let alto = '';
+                let altp = '';
+                
+                if (item.m_status_order?.operasional === '0' || !item.m_status_order?.operasional) {
+                    alto = 'ops waiting';
+                } else {
+                    alto = item.m_status_order?.kendaraan_operasional === 'Y' ? 'Ops Ready' : 'Ops No Ready';
+                }
+
+                if (item.m_status_order?.purchasing === '0' || !item.m_status_order?.purchasing) {
+                    altp = 'purch waiting';
+                } else {
+                    altp = item.m_status_order?.kendaraan_purchasing === 'Y' ? 'Purch Ready' : 'Purch No Ready';
+                }
+                statusText = `${alto} dan ${altp}`;
+            }
+
+            // Baris pertama dengan data lengkap (SP + SM pertama dari detail pertama)
+            excelRows.push({
+                no: rowNo++,
+                noSP: item.msp || '',
+                noSM: firstMsm,
+                perusahaan: item.customer?.nama_perusahaan || '',
+                sales: item.salesName?.nama_lengkap || '',
+                tujuan: tujuan,
+                alamatMuat: alamatMuat,
+                alamatDestinasi: alamatBongkar,
+                tglPickup: item.tgl_pickup ? core.moment(item.tgl_pickup).format('DD-MM-YYYY') : '',
+                orderDate: item.tgl_order ? core.moment(item.tgl_order).format('DD-MM-YYYY') : '',
+                kendaraan: firstDetail?.kendaraan || '',
+                price: price_perhitungan,
+                realprice: pricereal,
+                status: statusText
+            });
+            currentExcelRow++;
+
+            // Baris tambahan untuk setiap m_sm lainnya dari semua detail
+            // Loop semua detail
+            for (let i = 0; i < details.length; i++) {
+                const detail = details[i];
+                const sms = detail.m_sms || [];
+                
+                // Untuk detail pertama, skip SM pertama karena sudah di baris utama
+                // Untuk detail lainnya, ambil semua SM
+                const startIndex = (i === 0 && sms.length > 0) ? 1 : 0;
+                
+                for (let j = startIndex; j < sms.length; j++) {
+                    const sm = sms[j];
+                    
+                    // Format alamat untuk SM ini (lengkap dengan semua bagian)
+                    let smAlamatMuat = '';
+                    if (detail.muat) {
+                        const muat = detail.muat;
+                        const parts = [];
+                        if (muat.alamat) parts.push(muat.alamat);
+                        if (muat.alamat_detail) parts.push(muat.alamat_detail);
+                        if (muat.kecamatan) parts.push(muat.kecamatan);
+                        if (muat.kota) parts.push(muat.kota);
+                        smAlamatMuat = parts.join(', ').trim();
+                    }
+
+                    let smAlamatBongkar = '';
+                    if (detail.bongkar) {
+                        const bongkar = detail.bongkar;
+                        const parts = [];
+                        if (bongkar.alamat) parts.push(bongkar.alamat);
+                        if (bongkar.alamat_detail) parts.push(bongkar.alamat_detail);
+                        if (bongkar.kecamatan) parts.push(bongkar.kecamatan);
+                        if (bongkar.kota) parts.push(bongkar.kota);
+                        smAlamatBongkar = parts.join(', ').trim();
+                    }
+
+                    // Format tujuan untuk SM ini
+                    let smTujuan = '';
+                    if (detail.muat && detail.bongkar) {
+                        const kotaMuat = detail.muat.kota || '';
+                        const kotaBongkar = detail.bongkar.kota || '';
+                        if (kotaMuat && kotaBongkar) {
+                            smTujuan = `${kotaMuat}->${kotaBongkar}`;
+                        }
+                    }
+
+                    excelRows.push({
+                        no: '',
+                        noSP: '',
+                        noSM: sm.msm || '',
+                        perusahaan: '',
+                        sales: '',
+                        tujuan: smTujuan,
+                        alamatMuat: smAlamatMuat,
+                        alamatDestinasi: smAlamatBongkar,
+                        tglPickup: '',
+                        orderDate: '',
+                        kendaraan: '',
+                        price: '',
+                        realprice: '',
+                        status: ''
+                    });
+                    currentExcelRow++;
+                }
+            }
+            
+            // Simpan range untuk merge (hanya jika ada lebih dari 1 baris)
+            if (endRow > startRow) {
+                // Merge kolom: No (A), No SP (B), Perusahaan (D), Sales (E), Tgl Pickup (I), Order Date (J), Kendaraan (K), Price (L), Realprice (M), Status (N)
+                mergeRanges.push(
+                    { start: startRow, end: endRow, col: 'A' }, // No
+                    { start: startRow, end: endRow, col: 'B' }, // No SP
+                    { start: startRow, end: endRow, col: 'D' }, // Perusahaan
+                    { start: startRow, end: endRow, col: 'E' }, // Sales
+                    { start: startRow, end: endRow, col: 'I' }, // Tgl Pickup
+                    { start: startRow, end: endRow, col: 'J' }, // Order Date
+                    { start: startRow, end: endRow, col: 'K' }, // Kendaraan
+                    { start: startRow, end: endRow, col: 'L' }, // Price
+                    { start: startRow, end: endRow, col: 'M' }, // Realprice
+                    { start: startRow, end: endRow, col: 'N' }  // Status
+                );
+            }
+        }
+
+        // Create Excel workbook
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('Report Customer');
+
+        // Set column headers
+        worksheet.columns = [
+            { header: 'No', key: 'no', width: 8 },
+            { header: 'No SP', key: 'noSP', width: 20 },
+            { header: 'No SM', key: 'noSM', width: 20 },
+            { header: 'Perusahaan', key: 'perusahaan', width: 40 },
+            { header: 'Sales', key: 'sales', width: 20 },
+            { header: 'Tujuan', key: 'tujuan', width: 25 },
+            { header: 'Alamat Muat', key: 'alamatMuat', width: 50 },
+            { header: 'Alamat Destinasi', key: 'alamatDestinasi', width: 50 },
+            { header: 'Tgl Pickup', key: 'tglPickup', width: 15 },
+            { header: 'Order Date', key: 'orderDate', width: 15 },
+            { header: 'Kendaraan', key: 'kendaraan', width: 20 },
+            { header: 'Price', key: 'price', width: 15 },
+            { header: 'Realprice', key: 'realprice', width: 15 },
+            { header: 'Status', key: 'status', width: 15 }
+        ];
+
+        // Style header row
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+
+        // Add data rows
+        excelRows.forEach(row => {
+            const excelRow = worksheet.addRow(row);
+            // Set alignment untuk kolom yang di-merge
+            excelRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'center' }; // No
+            excelRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' }; // No SP
+            excelRow.getCell(4).alignment = { vertical: 'middle', horizontal: 'left' }; // Perusahaan
+            excelRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'left' }; // Sales
+            excelRow.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' }; // Tgl Pickup
+            excelRow.getCell(10).alignment = { vertical: 'middle', horizontal: 'center' }; // Order Date
+            excelRow.getCell(11).alignment = { vertical: 'middle', horizontal: 'center' }; // Kendaraan
+            excelRow.getCell(12).alignment = { vertical: 'middle', horizontal: 'right' }; // Price
+            excelRow.getCell(13).alignment = { vertical: 'middle', horizontal: 'right' }; // Realprice
+            excelRow.getCell(14).alignment = { vertical: 'middle', horizontal: 'center' }; // Status
+        });
+
+        // Merge cells untuk baris yang sama SP
+        mergeRanges.forEach(range => {
+            worksheet.mergeCells(`${range.col}${range.start}:${range.col}${range.end}`);
+            // Set alignment untuk merged cells
+            const cell = worksheet.getCell(`${range.col}${range.start}`);
+            let horizontalAlign = 'center';
+            if (range.col === 'D' || range.col === 'E') {
+                // Perusahaan dan Sales: left align
+                horizontalAlign = 'left';
+            } else if (range.col === 'L' || range.col === 'M') {
+                // Price dan Realprice: right align
+                horizontalAlign = 'right';
+            }
+            cell.alignment = { vertical: 'middle', horizontal: horizontalAlign };
+        });
+
+        // Set response headers
+        const filename = `report_customer_${core.moment().format('YYYYMMDD_HHmmss')}.xlsx`;
+        
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        // Write Excel file to response
+        await workbook.xlsx.write(res);
+        res.end();
+
+    } catch (error) {
+        console.error('Error exportReportCustomerExcel:', error);
+        
+        if (!res.headersSent) {
+            res.status(500).json({
+                status: {
+                    code: 500,
+                    message: error.message
+                }
+            });
+        } else {
+            console.error('Headers already sent, cannot send error response');
+        }
+    }
 };
 
 

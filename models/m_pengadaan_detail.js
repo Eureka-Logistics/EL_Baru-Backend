@@ -252,6 +252,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 0
+    },
+    pajak: {
+      type: DataTypes.DECIMAL(5,2),
+      allowNull: true,
+      defaultValue: null
     }
   }, {
     sequelize,

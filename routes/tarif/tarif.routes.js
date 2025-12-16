@@ -16,6 +16,11 @@ router.post('/delete-tarifCustomer', authentication, tarifController.deleteTarif
 router.post('/create-tarifCustomer-confirmation', authentication, tarifController.createTarifCustomerWithConfirmation);
 router.post('/replace-tarifCustomer', authentication, tarifController.replaceTarifCustomer);
 
+// Export Excel Tarif Customer
+router.get('/export-tarif-customer-excel', authentication, tarifController.exportTarifCustomerExcel);
+// Export Excel Tarif Eureka
+router.get('/export-tarif-eureka-excel', authentication, tarifController.exportTarifEurekaExcel);
+
 
 router.get('/get-tarifEureka', authentication, tarifController.getTarifEureka);
 router.get('/get-detail-tarifEureka', authentication, tarifController.getDetailtarifEureka);
