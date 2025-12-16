@@ -272,6 +272,11 @@ module.exports = function(sequelize, DataTypes) {
     id_uang_jalan: {
       type: DataTypes.INTEGER,
       allowNull: true
+    },
+    pajak: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
     }
   }, {
     sequelize,

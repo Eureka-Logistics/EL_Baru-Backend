@@ -6,6 +6,7 @@ const { mode } = require('crypto-js');
 const e = require('express');
 const CryptoJS = core.CryptoJS
 const db = require("../../config/db.config");
+const ExcelJS = require('exceljs');
 
 
 //SALES
@@ -900,6 +901,243 @@ exports.getSelectCreateSp = async (req, res) => {
     });
   }
 };
+
+// Export Excel SP List
+exports.exportSpListExcel = async (req, res) => {
+    try {
+        // Setup associations
+        models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
+        // users -> BU & Brench
+        if (!models.users.associations.bu) {
+            models.users.belongsTo(models.m_bu, { targetKey: 'id_bu', foreignKey: 'id_bu', as: 'bu' });
+        }
+        if (!models.users.associations.brench) {
+            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
+        }
+        models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
+        models.m_pengadaan.belongsTo(models.m_status_order, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        models.m_pengadaan.hasMany(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        models.m_status_order.belongsTo(models.users, { targetKey: 'id', foreignKey: 'operasional' });
+        if (!models.m_pengadaan_detail.associations.kotaAsal) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_almuat', as: 'kotaAsal' });
+        }
+        if (!models.m_pengadaan_detail.associations.kotaTujuan) {
+            models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar', as: 'kotaTujuan' });
+        }
+        // Relasi ke m_sm untuk ambil id_mitra_pickup + join ke mitra untuk dapat nama mitra
+        if (!models.m_pengadaan_detail.associations.m_sm) {
+            models.m_pengadaan_detail.hasMany(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
+        }
+        if (!models.m_sm.associations.mitra) {
+            models.m_sm.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra_pickup', as: 'mitra' });
+        }
+
+        // Filters
+        const whereSp = {
+            ...(req.query.statusSP ? { status: req.query.statusSP } : {}),
+            ...(req.query.customerId ? { id_customer: req.query.customerId } : {}),
+            ...(req.query.sales ? { id_sales: req.query.sales } : {}),
+            ...(req.query.keyword ? { msp: { [Op.like]: `%${req.query.keyword}%` } } : {}),
+            ...(req.query.startDate && req.query.endDate ? {
+                tgl_pickup: { [Op.between]: [req.query.startDate, req.query.endDate] }
+            } : {})
+        };
+
+        const rows = await models.m_pengadaan.findAll({
+            where: whereSp,
+            order: [['id_mp', 'desc']],
+            include: [
+                {
+                    model: models.users,
+                    attributes: ['nama_lengkap', 'id_bu', 'id_bu_brench'],
+                    include: [
+                        { model: models.m_bu, as: 'bu', attributes: ['name_bu', 'code_bu'] },
+                        { model: models.m_bu_brench, as: 'brench', attributes: ['code_bu_brench'] }
+                    ]
+                },
+                { model: models.customer, attributes: ['nama_perusahaan'] },
+                {
+                    model: models.m_status_order,
+                    required: false,
+                    include: [{ model: models.users, attributes: ['nama_lengkap'] }]
+                },
+                {
+                    model: models.m_pengadaan_detail,
+                    required: false,
+                    include: [
+                        { model: models.alamat, as: 'kotaAsal', attributes: ['kota'] },
+                        { model: models.alamat, as: 'kotaTujuan', attributes: ['kota'] },
+                        {
+                            model: models.m_sm,
+                            required: false,
+                            attributes: ['id_mitra_pickup'],
+                            include: [
+                                {
+                                    model: models.mitra,
+                                    as: 'mitra',
+                                    attributes: ['nama_mitra']
+                                }
+                            ]
+                        },
+                    ]
+                }
+            ]
+        });
+
+        // Kumpulkan id massage_do untuk alasan reject (sales/act/ops/purch)
+        const massageIds = new Set();
+        rows.forEach((item) => {
+            const st = item.m_status_order || {};
+            if (st.sales_reject) massageIds.add(st.sales_reject);
+            if (st.act_reject) massageIds.add(st.act_reject);
+            if (st.ops_reject) massageIds.add(st.ops_reject);
+            if (st.purch_reject) massageIds.add(st.purch_reject);
+        });
+
+        const massageMap = {};
+        if (massageIds.size > 0) {
+            const massages = await models.massage_do.findAll({
+                where: { id_massage_do: { [Op.in]: Array.from(massageIds) } },
+                attributes: ['id_massage_do', 'massage']
+            });
+            massages.forEach((m) => {
+                massageMap[m.id_massage_do] = m.massage;
+            });
+        }
+
+        const excelRows = [];
+        let no = 1;
+        for (const item of rows) {
+            const details = Array.isArray(item.m_pengadaan_details) ? item.m_pengadaan_details : [];
+            const firstDetail = details[0] || null;
+            const lastDetail = details.length > 0 ? details[details.length - 1] : null;
+            const kendaraan = firstDetail?.kendaraan || '-';
+            // Ambil nama mitra dari relasi m_sm -> mitra (ambil yang pertama ada namanya)
+            let mitra = '';
+            for (const det of details) {
+                const smsList = Array.isArray(det.m_sms) ? det.m_sms : [];
+                const foundSm = smsList.find(sm => sm && sm.id_mitra_pickup && sm.id_mitra_pickup !== 0);
+                if (foundSm) {
+                    mitra = foundSm.mitra?.nama_mitra || '';
+                    break;
+                }
+            }
+            const kotaMuat = firstDetail?.kotaAsal?.kota || '-';
+            const kotaBongkar = lastDetail?.kotaTujuan?.kota || '-';
+            const destination = `${kotaMuat} - ${kotaBongkar}`.trim();
+
+            const statusOrder = item.m_status_order || {};
+            const formatDate = (val) => {
+                if (!val) return 'Invalid Date';
+                const formatted = core.moment(val).format('YYYY-MM-DD HH:mm:ss');
+                return formatted === '1970-01-01 07:00:00' ? 'Invalid Date' : formatted;
+            };
+
+            const reasonSalesReject = statusOrder.sales_reject ? (massageMap[statusOrder.sales_reject] || '') : '';
+            const reasonActReject = statusOrder.act_reject ? (massageMap[statusOrder.act_reject] || '') : '';
+            const reasonOpsReject = statusOrder.ops_reject ? (massageMap[statusOrder.ops_reject] || '') : '';
+            const reasonPurchReject = statusOrder.purch_reject ? (massageMap[statusOrder.purch_reject] || '') : '';
+
+            excelRows.push({
+                no: no++,
+                idmp: item.id_mp || '',
+                sp: item.msp || '',
+                salesName: item.user?.nama_lengkap || '-',
+                buName: item.user?.bu?.name_bu || item.user?.bu?.code_bu || '',
+                buBrench: item.user?.brench?.code_bu_brench || '',
+                gl: '-',
+                asm: '-',
+                mgr: '-',
+                kacab: '-',
+                amd: '-',
+                perusahaan: item.customer?.nama_perusahaan || '-',
+                kendaraan: kendaraan,
+                mitra: mitra,
+                service: item.service || '',
+                pickupDate: item.tgl_pickup ? core.moment(item.tgl_pickup).format('YYYY-MM-DD') : '',
+                approveSales: statusOrder.act_sales || '',
+                dateApproveSales: formatDate(statusOrder.tgl_act_1),
+                approveAct: statusOrder.act_akunting || '',
+                dateApproveAct: formatDate(statusOrder.tgl_act_3),
+                approveOps: statusOrder.kendaraan_operasional || '',
+                idops: statusOrder.operasional || '',
+                operationalName: statusOrder.user?.nama_lengkap || '',
+                dateApproveOps: formatDate(statusOrder.tgl_act_4),
+                approvePurch: statusOrder.kendaraan_purchasing || '',
+                dateApprovePurch: formatDate(statusOrder.tgl_act_5),
+                new: item.new || '',
+                destination: destination,
+                actSales: statusOrder.act_sales || '',
+                salesRejectReason: reasonSalesReject,
+                actRejectReason: reasonActReject,
+                opsRejectReason: reasonOpsReject,
+                purchRejectReason: reasonPurchReject
+            });
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('SP List');
+        worksheet.columns = [
+            { header: 'no', key: 'no', width: 6 },
+            { header: 'idmp', key: 'idmp', width: 12 },
+            { header: 'sp', key: 'sp', width: 18 },
+            { header: 'salesName', key: 'salesName', width: 22 },
+            { header: 'BU', key: 'buName', width: 18 },
+            { header: 'BU Brench', key: 'buBrench', width: 14 },
+            { header: 'gl', key: 'gl', width: 8 },
+            { header: 'asm', key: 'asm', width: 8 },
+            { header: 'mgr', key: 'mgr', width: 8 },
+            { header: 'kacab', key: 'kacab', width: 8 },
+            { header: 'amd', key: 'amd', width: 8 },
+            { header: 'perusahaan', key: 'perusahaan', width: 30 },
+            { header: 'kendaraan', key: 'kendaraan', width: 14 },
+            { header: 'mitra', key: 'mitra', width: 12 },
+            { header: 'service', key: 'service', width: 12 },
+            { header: 'pickupDate', key: 'pickupDate', width: 20 },
+            { header: 'approveSales', key: 'approveSales', width: 12 },
+            { header: 'dateApproveSales', key: 'dateApproveSales', width: 20 },
+            { header: 'approveAct', key: 'approveAct', width: 12 },
+            { header: 'dateApproveAct', key: 'dateApproveAct', width: 20 },
+            { header: 'approveOps', key: 'approveOps', width: 12 },
+            { header: 'idops', key: 'idops', width: 10 },
+            { header: 'operationalName', key: 'operationalName', width: 20 },
+            { header: 'dateApproveOps', key: 'dateApproveOps', width: 20 },
+            { header: 'approvePurch', key: 'approvePurch', width: 14 },
+            { header: 'dateApprovePurch', key: 'dateApprovePurch', width: 20 },
+            { header: 'new', key: 'new', width: 6 },
+            { header: 'destination', key: 'destination', width: 30 },
+            { header: 'act_sales', key: 'actSales', width: 10 },
+            { header: 'sales_reject_reason', key: 'salesRejectReason', width: 28 },
+            { header: 'act_reject_reason', key: 'actRejectReason', width: 28 },
+            { header: 'ops_reject_reason', key: 'opsRejectReason', width: 28 },
+            { header: 'purch_reject_reason', key: 'purchRejectReason', width: 28 },
+        ];
+        worksheet.getRow(1).font = { bold: true };
+        worksheet.getRow(1).alignment = { vertical: 'middle', horizontal: 'center' };
+        excelRows.forEach((r) => worksheet.addRow(r));
+
+        const start = req.query.startDate ? core.moment(req.query.startDate).format('YYYYMMDD') : null;
+        const end = req.query.endDate ? core.moment(req.query.endDate).format('YYYYMMDD') : null;
+        const dateLabel = start && end ? `${start}_${end}` : core.moment().format('YYYYMMDD_HHmmss');
+        const filename = `sp_list_${dateLabel}.xlsx`;
+        res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+
+        await workbook.xlsx.write(res);
+        res.end();
+    } catch (error) {
+        console.error('Error exportSpListExcel:', error);
+        if (!res.headersSent) {
+            res.status(500).json({
+                status: { code: 500, message: error.message }
+            });
+        }
+    }
+}
 
 exports.createSp = async (req, res) => {
     try {
@@ -2358,13 +2596,6 @@ exports.createDetailSp = async (req, res) => {
             // Hitung total_produk
             const totalProduk = (req.body.harga || 0) * (req.body.jumlah || 0)
             
-            // Hitung diskon (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
-            const diskonPersen = req.body.diskon || 0
-            const diskonNilai = totalProduk * (diskonPersen / 100)
-            
-            // Hitung pajak hanya jika ada dari payload frontend
-            const pajak = req.body.pajak ? (req.body.pajak / 100) * (totalProduk - diskonNilai) : 0
-            
             // Ambil semua biaya untuk perhitungan total detail
             const detailBiayaOvertonase = req.body.biaya_overtonase || 0
             const detailBiayaPengganti = 0 // Tidak ada di detail level
@@ -2376,8 +2607,21 @@ exports.createDetailSp = async (req, res) => {
             const detailBiayaTambahan = req.body.biaya_tambahan || 0
             const detailBiayaMultiMuat = req.body.biaya_multimuat || 0
             
-            // Hitung total: total_produk - diskon + pajak + semua biaya (tanpa harga/biaya_jalan)
-            const total = totalProduk - diskonNilai + pajak + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
+            // Hitung subtotal detail: totalProduk + semua biaya
+            const subtotalDetail = totalProduk + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
+            
+            // Hitung diskon dari subtotal detail (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
+            const diskonPersen = req.body.diskon || 0
+            const diskonNilai = subtotalDetail * (diskonPersen / 100)
+            
+            // Hitung base amount: subtotal detail - diskonNilai
+            const baseAmount = subtotalDetail - diskonNilai
+            
+            // Hitung pajak dari base amount (hanya jika ada dari payload frontend)
+            const pajak = req.body.pajak ? (req.body.pajak / 100) * baseAmount : 0
+            
+            // Hitung total: totalProduk + semua biaya - diskonNilai + pajak
+            const total = baseAmount + pajak
             
             const createDetail = await models.m_pengadaan_detail.create(
                 {
@@ -2418,6 +2662,7 @@ exports.createDetailSp = async (req, res) => {
                     'biaya_mel': req.body.biaya_mel || 0,
                     'biaya_tambahan': req.body.biaya_tambahan || 0,
                     'biaya_lain': req.body.biaya_lain || 0,
+                    'pajak': req.body.pajak !== undefined ? req.body.pajak : null,
                     'max_tonase': req.body.max_tonase,
                     'harga_selanjutnya': req.body.harga_selanjutnya,
                     'id_price_customer': req.body.id_price_customer,
@@ -2461,15 +2706,37 @@ exports.createDetailSp = async (req, res) => {
                 const maxTonase = core.sumArray(getPrice.map((i) => i.max_tonase))
                 const hargaSelanjutnya = core.sumArray(getPrice.map((i) => i.harga_selanjutnya))
                 
-                // Calculate total_keseluruhan: subtotal + diskon + biaya_overtonase + biaya_pengganti + biaya_muat + biaya_muat_bongkar + biaya_multi_drop + biaya_lain + biaya_mel + biaya_jalan + biaya_tambahan + biaya_multi_muat
-                const diskon = getPengadaanData ? (getPengadaanData.diskon || 0) : 0
+                // Hitung diskonNilai dan pajakNilai dari setiap detail
+                const diskonNilaiArray = getPrice.map((detail) => {
+                    const detailSubtotal = (detail.total_produk || 0) + (detail.biaya_overtonase || 0) + (detail.harga_muat || 0) + (detail.harga_bongkar || 0) + (detail.biaya_multidrop || 0) + (detail.biaya_lain || 0) + (detail.biaya_mel || 0) + (detail.biaya_tambahan || 0) + (detail.biaya_multimuat || 0)
+                    const diskonPersen = detail.diskon || 0
+                    return diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+                })
+                
+                const pajakNilaiArray = getPrice.map((detail) => {
+                    const detailSubtotal = (detail.total_produk || 0) + (detail.biaya_overtonase || 0) + (detail.harga_muat || 0) + (detail.harga_bongkar || 0) + (detail.biaya_multidrop || 0) + (detail.biaya_lain || 0) + (detail.biaya_mel || 0) + (detail.biaya_tambahan || 0) + (detail.biaya_multimuat || 0)
+                    const diskonPersen = detail.diskon || 0
+                    const diskonNilai = diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+                    const baseAmount = detailSubtotal - diskonNilai
+                    const pajakPersen = detail.pajak || 0
+                    return pajakPersen ? (pajakPersen / 100) * baseAmount : 0
+                })
+                
+                // Sum diskonNilai dan pajakNilai dari semua detail
+                const diskonNilaiTotal = core.sumArray(diskonNilaiArray)
+                const pajakNilaiTotal = core.sumArray(pajakNilaiArray)
+                
+                // Sum total dari semua detail untuk total_keseluruhan
+                const totalKeseluruhan = core.sumArray(getPrice.map((i) => i.total || 0))
+                
                 const biayaPengganti = getPengadaanData ? (getPengadaanData.biaya_pengganti || 0) : 0
-                const totalKeseluruhan = subtotal + diskon + biayaOvertonase + biayaPengganti + biayaMuat + biayBongkar + biayaMultiDrop + biayaLain + biayaMel + tarif + biayaTambahan + biayaMultiMuat
                 
                 if (subtotal !== null && subtotal !== undefined) {
                     const udpTotalSp = await models.m_pengadaan.update(
                         {
                             subtotal: subtotal,
+                            diskon: Math.round(diskonNilaiTotal),
+                            pajak: Math.round(pajakNilaiTotal),
                             total_keseluruhan: totalKeseluruhan,
                             biaya_muat: biayaMuat,
                             biaya_muat_bongkar: biayBongkar,
@@ -4224,15 +4491,15 @@ exports.editSpDetail = async (req, res) => {
             }
         )
         if (getUser) {
+            // Ambil data detail yang sudah ada untuk mendapatkan nilai pajak jika tidak ada di payload
+            const existingDetail = await models.m_pengadaan_detail.findOne({
+                where: {
+                    id_mpd: req.body.id_mpd
+                }
+            })
+            
             // Hitung total_produk
             const totalProduk = (req.body.harga || 0) * (req.body.jumlah || 0)
-            
-            // Hitung diskon (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
-            const diskonPersen = req.body.diskon || 0
-            const diskonNilai = totalProduk * (diskonPersen / 100)
-            
-            // Hitung pajak hanya jika ada dari payload frontend
-            const pajak = req.body.pajak ? (req.body.pajak / 100) * (totalProduk - diskonNilai) : 0
             
             // Ambil semua biaya untuk perhitungan total detail
             const detailBiayaOvertonase = req.body.biaya_overtonase || 0
@@ -4245,11 +4512,25 @@ exports.editSpDetail = async (req, res) => {
             const detailBiayaTambahan = req.body.biaya_tambahan || 0
             const detailBiayaMultiMuat = req.body.biaya_multimuat || 0
             
-            // Hitung total: total_produk - diskon + pajak + semua biaya (tanpa harga/biaya_jalan)
-            const total = totalProduk - diskonNilai + pajak + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
+            // Hitung subtotal detail: totalProduk + semua biaya
+            const subtotalDetail = totalProduk + detailBiayaOvertonase + detailBiayaPengganti + detailBiayaMuat + detailBiayaMuatBongkar + detailBiayaMultiDrop + detailBiayaLain + detailBiayaMel + detailBiayaTambahan + detailBiayaMultiMuat
             
-            const updData = await models.m_pengadaan_detail.update(
-                {
+            // Hitung diskon dari subtotal detail (asumsi diskon adalah persentase, misalnya 20 berarti 20%)
+            const diskonPersen = req.body.diskon || 0
+            const diskonNilai = subtotalDetail * (diskonPersen / 100)
+            
+            // Hitung base amount: subtotal detail - diskonNilai
+            const baseAmount = subtotalDetail - diskonNilai
+            
+            // Hitung pajak: gunakan dari payload jika ada, jika tidak ambil dari database, jika tidak ada sama sekali maka 0
+            const pajakPersen = req.body.pajak !== undefined ? req.body.pajak : (existingDetail && existingDetail.pajak !== null ? existingDetail.pajak : 0)
+            const pajak = pajakPersen ? (pajakPersen / 100) * baseAmount : 0
+            
+            // Hitung total: totalProduk + semua biaya - diskonNilai + pajak
+            const total = baseAmount + pajak
+            
+            // Buat object update data
+            const updateData = {
                     // ph: req.body.ph,
                     via: req.body.via,
                     shipment: req.body.shipment,
@@ -4280,7 +4561,15 @@ exports.editSpDetail = async (req, res) => {
                     max_tonase: req.body.max_tonase,
                     id_price_customer: req.body.id_price_customer,
                     tgl_update: core.moment(Date.now()).format('YYYY-MM-DD HH:mm:ss'),
-                },
+                }
+            
+            // Hanya update pajak jika ada di payload
+            if (req.body.pajak !== undefined) {
+                updateData.pajak = req.body.pajak
+            }
+            
+            const updData = await models.m_pengadaan_detail.update(
+                updateData,
                 {
                     where: {
                         id_mpd: req.body.id_mpd
@@ -4323,15 +4612,37 @@ exports.editSpDetail = async (req, res) => {
             const maxTonase = core.sumArray(getPrice.map((i) => i.max_tonase))
             const hargaSelanjutnya = core.sumArray(getPrice.map((i) => i.harga_selanjutnya))
             
-            // Calculate total_keseluruhan: subtotal + diskon + biaya_overtonase + biaya_pengganti + biaya_muat + biaya_muat_bongkar + biaya_multi_drop + biaya_lain + biaya_mel + biaya_jalan + biaya_tambahan + biaya_multi_muat
-            const diskon = getPengadaanData ? (getPengadaanData.diskon || 0) : 0
+            // Hitung diskonNilai dan pajakNilai dari setiap detail
+            const diskonNilaiArray = getPrice.map((detail) => {
+                const detailSubtotal = (detail.total_produk || 0) + (detail.biaya_overtonase || 0) + (detail.harga_muat || 0) + (detail.harga_bongkar || 0) + (detail.biaya_multidrop || 0) + (detail.biaya_lain || 0) + (detail.biaya_mel || 0) + (detail.biaya_tambahan || 0) + (detail.biaya_multimuat || 0)
+                const diskonPersen = detail.diskon || 0
+                return diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+            })
+            
+            const pajakNilaiArray = getPrice.map((detail) => {
+                const detailSubtotal = (detail.total_produk || 0) + (detail.biaya_overtonase || 0) + (detail.harga_muat || 0) + (detail.harga_bongkar || 0) + (detail.biaya_multidrop || 0) + (detail.biaya_lain || 0) + (detail.biaya_mel || 0) + (detail.biaya_tambahan || 0) + (detail.biaya_multimuat || 0)
+                const diskonPersen = detail.diskon || 0
+                const diskonNilai = diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+                const baseAmount = detailSubtotal - diskonNilai
+                const pajakPersen = detail.pajak || 0
+                return pajakPersen ? (pajakPersen / 100) * baseAmount : 0
+            })
+            
+            // Sum diskonNilai dan pajakNilai dari semua detail
+            const diskonNilaiTotal = core.sumArray(diskonNilaiArray)
+            const pajakNilaiTotal = core.sumArray(pajakNilaiArray)
+            
+            // Sum total dari semua detail untuk total_keseluruhan
+            const totalKeseluruhan = core.sumArray(getPrice.map((i) => i.total || 0))
+            
             const biayaPengganti = getPengadaanData ? (getPengadaanData.biaya_pengganti || 0) : 0
-            const totalKeseluruhan = subtotal + diskon + biayaOvertonase + biayaPengganti + biayaMuat + biayBongkar + biayaMultiDrop + biayaLain + biayaMel + price + biayaTambahan + biayaMultiMuat
             
             if (subtotal !== null && subtotal !== undefined) {
                 const udpTotalSp = await models.m_pengadaan.update(
                     {
                         subtotal: subtotal,
+                        diskon: Math.round(diskonNilaiTotal),
+                        pajak: Math.round(pajakNilaiTotal),
                         total_keseluruhan: totalKeseluruhan,
                         biaya_muat: biayaMuat,
                         biaya_muat_bongkar: biayBongkar,
@@ -8332,9 +8643,11 @@ exports.getFilterSp = async (req, res) => {
                     }
                 }
             )
-            const getCabang = await models.users.findAll(
+            const getCabang = await models.m_bu_brench.findAll(
                 {
-                    group: [['kode_cabang']]
+                    where: {
+                        status: 1
+                    }
                 }
             )
             const getBu = await models.m_bu.findAll(
@@ -8360,7 +8673,8 @@ exports.getFilterSp = async (req, res) => {
                     }),
                     cabang: getCabang.map((i) => {
                         return {
-                            cabang: i.kode_cabang
+                            id: i.id_bu_brench,
+                            cabang: i.code_bu_brench
                         }
                     }),
                     sales: getSales.map((i) => {
@@ -9356,6 +9670,61 @@ exports.getSpListAllDetail = async (req, res) => {
                 const sumHargaSelanjutnya = core.sumArray(hargaSelanjutnyaTotal)
                 const sumHarga = core.sumArray(hargaTotal)
 
+                // Hitung total_produk dari m_pengadaan_detail
+                const totalProdukArray = getDetail.map((i) => i.total_produk || 0)
+                const sumTotalProduk = core.sumArray(totalProdukArray)
+
+                // Hitung total_biaya_tambahan dari semua biaya di m_pengadaan_detail
+                const totalBiayaTambahanArray = getDetail.map((i) => {
+                    return (i.harga_muat || 0) + 
+                           (i.harga_bongkar || 0) + 
+                           (i.biaya_overtonase || 0) + 
+                           (i.biaya_multimuat || 0) + 
+                           (i.biaya_multidrop || 0) + 
+                           (i.biaya_mel || 0) + 
+                           (i.biaya_tambahan || 0) + 
+                           (i.biaya_lain || 0) + 
+                           (i.harga_selanjutnya || 0)
+                })
+                const sumTotalBiayaTambahan = core.sumArray(totalBiayaTambahanArray)
+
+                // Hitung total_diskon (diskonNilai) dari setiap detail
+                const diskonNilaiArray = getDetail.map((detail) => {
+                    const detailSubtotal = (detail.total_produk || 0) + 
+                                          (detail.biaya_overtonase || 0) + 
+                                          (detail.harga_muat || 0) + 
+                                          (detail.harga_bongkar || 0) + 
+                                          (detail.biaya_multidrop || 0) + 
+                                          (detail.biaya_lain || 0) + 
+                                          (detail.biaya_mel || 0) + 
+                                          (detail.biaya_tambahan || 0) + 
+                                          (detail.biaya_multimuat || 0) +
+                                          (detail.harga_selanjutnya || 0)
+                    const diskonPersen = detail.diskon || 0
+                    return diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+                })
+                const sumTotalDiskon = Math.round(core.sumArray(diskonNilaiArray))
+
+                // Hitung total_pajak (pajakNilai) dari setiap detail
+                const pajakNilaiArray = getDetail.map((detail) => {
+                    const detailSubtotal = (detail.total_produk || 0) + 
+                                          (detail.biaya_overtonase || 0) + 
+                                          (detail.harga_muat || 0) + 
+                                          (detail.harga_bongkar || 0) + 
+                                          (detail.biaya_multidrop || 0) + 
+                                          (detail.biaya_lain || 0) + 
+                                          (detail.biaya_mel || 0) + 
+                                          (detail.biaya_tambahan || 0) + 
+                                          (detail.biaya_multimuat || 0) +
+                                          (detail.harga_selanjutnya || 0)
+                    const diskonPersen = detail.diskon || 0
+                    const diskonNilai = diskonPersen ? (diskonPersen / 100) * detailSubtotal : 0
+                    const baseAmount = detailSubtotal - diskonNilai
+                    const pajakPersen = detail.pajak || 0
+                    return pajakPersen ? (pajakPersen / 100) * baseAmount : 0
+                })
+                const sumTotalPajak = Math.round(core.sumArray(pajakNilaiArray))
+
                 // const getMuat = await models.alamat.findOne(
 
                 output = {
@@ -9397,7 +9766,10 @@ exports.getSpListAllDetail = async (req, res) => {
                     surat_pelayanan_expired: suratPelayananExpiredArr[0],
                     // kotaasal: kotaMuat[0],
                     // kotaBongkar: kotBongkar[0],
-                    tarif: sumHarga,
+                    tarif: sumTotalProduk,
+                    total_biaya_tambahan: sumTotalBiayaTambahan,
+                    total_diskon: sumTotalDiskon,
+                    total_pajak: sumTotalPajak,
                     biayaLain: sumBiayaLa,
                     biayaMel: sumMel,
                     hargaSelanjutnya: sumHargaSelanjutnya,
@@ -9415,7 +9787,7 @@ exports.getSpListAllDetail = async (req, res) => {
 
 
                     // subTotal: service[0] != "Charter" ? core.sumArray(getPrice) * core.sumArray(getPriceBerat) : core.sumArray(getPrice),
-                    Totalprice: sumDiscont == 0 && service[0] == "Charter" ? core.sumArray(getPrice) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain : service[0] != "Charter" ? (core.sumArray(getPrice) * core.sumArray(getPriceBerat) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain) : (core.sumArray(getPrice) * sumDiscont) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain,
+                    // Totalprice: sumDiscont == 0 && service[0] == "Charter" ? core.sumArray(getPrice) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain : service[0] != "Charter" ? (core.sumArray(getPrice) * core.sumArray(getPriceBerat) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain) : (core.sumArray(getPrice) * sumDiscont) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain,
                     totalFix: getPengadaan.map((i) => i.total_keseluruhan)[0],
                     alamatInvoiceList: getAlamatInvoice.map((ii) => {
                         sumBiayaLain
@@ -9582,9 +9954,9 @@ exports.getSpListAllDetail = async (req, res) => {
                                     unitId: ii.id_unit,
                                     supirId: ii.id_supir,
                                     total: ii.total,
-                                    totalBiayaRetail: (ii.harga * ii.berat) + ii.harga_bongkar + ii.harga_muat,
-                                    totalBiayaCharter: ii.harga + ii.harga_bongkar + ii.harga_muat,
-                                    biaya_jalan: getTarif?.biaya_jalan,
+                                    // totalBiayaRetail: (ii.harga * ii.berat) + ii.harga_bongkar + ii.harga_muat,
+                                    // totalBiayaCharter: ii.harga + ii.harga_bongkar + ii.harga_muat,
+                                    // biaya_jalan: getTarif?.biaya_jalan,
 
                                     // supirSM2:ii.m_sm.id_unit_2 == null ?"-":ii.m_sm.id_unit_2,
 
