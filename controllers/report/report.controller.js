@@ -229,9 +229,68 @@ exports.getBelumKembali = async (req, res) => {
         let totalQtyKeseluruhan = 0;
         let totalValKeseluruhan = 0;
         
+        // Inisialisasi total bulanan untuk qty dan val
+        let totalQtyBulanan = {
+            total_qty_januari: 0,
+            total_qty_februari: 0,
+            total_qty_maret: 0,
+            total_qty_april: 0,
+            total_qty_mei: 0,
+            total_qty_juni: 0,
+            total_qty_juli: 0,
+            total_qty_agustus: 0,
+            total_qty_september: 0,
+            total_qty_oktober: 0,
+            total_qty_november: 0,
+            total_qty_desember: 0
+        };
+
+        let totalValBulanan = {
+            total_val_januari: 0,
+            total_val_februari: 0,
+            total_val_maret: 0,
+            total_val_april: 0,
+            total_val_mei: 0,
+            total_val_juni: 0,
+            total_val_juli: 0,
+            total_val_agustus: 0,
+            total_val_september: 0,
+            total_val_oktober: 0,
+            total_val_november: 0,
+            total_val_desember: 0
+        };
+        
         data.forEach(item => {
             totalQtyKeseluruhan += parseFloat(item.tot_qty || 0);
             totalValKeseluruhan += parseFloat(item.tot_val || 0);
+            
+            // Hitung total qty bulanan dari semua name_bu_brench
+            totalQtyBulanan.total_qty_januari += parseFloat(item.qty_januari || 0);
+            totalQtyBulanan.total_qty_februari += parseFloat(item.qty_februari || 0);
+            totalQtyBulanan.total_qty_maret += parseFloat(item.qty_maret || 0);
+            totalQtyBulanan.total_qty_april += parseFloat(item.qty_april || 0);
+            totalQtyBulanan.total_qty_mei += parseFloat(item.qty_mei || 0);
+            totalQtyBulanan.total_qty_juni += parseFloat(item.qty_juni || 0);
+            totalQtyBulanan.total_qty_juli += parseFloat(item.qty_juli || 0);
+            totalQtyBulanan.total_qty_agustus += parseFloat(item.qty_agustus || 0);
+            totalQtyBulanan.total_qty_september += parseFloat(item.qty_september || 0);
+            totalQtyBulanan.total_qty_oktober += parseFloat(item.qty_oktober || 0);
+            totalQtyBulanan.total_qty_november += parseFloat(item.qty_november || 0);
+            totalQtyBulanan.total_qty_desember += parseFloat(item.qty_desember || 0);
+            
+            // Hitung total val bulanan dari semua name_bu_brench
+            totalValBulanan.total_val_januari += parseFloat(item.val_januari || 0);
+            totalValBulanan.total_val_februari += parseFloat(item.val_februari || 0);
+            totalValBulanan.total_val_maret += parseFloat(item.val_maret || 0);
+            totalValBulanan.total_val_april += parseFloat(item.val_april || 0);
+            totalValBulanan.total_val_mei += parseFloat(item.val_mei || 0);
+            totalValBulanan.total_val_juni += parseFloat(item.val_juni || 0);
+            totalValBulanan.total_val_juli += parseFloat(item.val_juli || 0);
+            totalValBulanan.total_val_agustus += parseFloat(item.val_agustus || 0);
+            totalValBulanan.total_val_september += parseFloat(item.val_september || 0);
+            totalValBulanan.total_val_oktober += parseFloat(item.val_oktober || 0);
+            totalValBulanan.total_val_november += parseFloat(item.val_november || 0);
+            totalValBulanan.total_val_desember += parseFloat(item.val_desember || 0);
         });
 
         output = {
@@ -242,7 +301,9 @@ exports.getBelumKembali = async (req, res) => {
             data: data,
             total: {
                 total_qty: totalQtyKeseluruhan,
-                total_val: totalValKeseluruhan
+                total_val: totalValKeseluruhan,
+                ...totalQtyBulanan,
+                ...totalValBulanan
             }
         };
 
