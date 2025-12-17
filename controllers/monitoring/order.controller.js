@@ -366,7 +366,7 @@ exports.exportExcelUnlimited = async (req, res) => {
 
 exports.getMonitoringSJList = async (req, res) => {
   try {
-    const { mulai, selesai, bu, limit, page, vendor, brench, nopol, customer, sukses_kirim, keyword } = req.query;
+    const { mulai, selesai, bu, limit, page, vendor, brench, cabang, nopol, customer, sukses_kirim, keyword } = req.query;
 
     if (!mulai || !selesai) {
       return res.status(400).json({
@@ -445,6 +445,10 @@ exports.getMonitoringSJList = async (req, res) => {
       sql += " AND t.id_bu_brench = ?";
       params.push(brench);
     }
+    if (cabang) {
+      sql += " AND a.id_bu_brench = ?";
+      params.push(cabang);
+    }
     if (vendor) {
       sql += " AND a.id_mitra_pickup = ?";
       params.push(vendor);
@@ -506,6 +510,7 @@ exports.getMonitoringSJList = async (req, res) => {
         AND (a.tgl_muat BETWEEN ? AND ?) 
         ${bu ? ' AND a.id_bu = ?' : ''}
         ${brench ? ' AND t.id_bu_brench = ?' : ''}
+        ${cabang ? ' AND a.id_bu_brench = ?' : ''}
         ${vendor ? ' AND a.id_mitra_pickup = ?' : ''}
         ${nopol ? ' AND a.pickup_nopol LIKE ?' : ''}
         ${customer ? (isCustomerId ? ' AND u.id_customer = ?' : ' AND u.nama_perusahaan LIKE ?') : ''}
@@ -517,6 +522,7 @@ exports.getMonitoringSJList = async (req, res) => {
       selesai,
       ...(bu ? [bu] : []),
       ...(brench ? [brench] : []),
+      ...(cabang ? [cabang] : []),
       ...(vendor ? [vendor] : []),
       ...(nopol ? [`%${nopol}%`] : []),
       ...(customer ? (isCustomerId ? [customer] : [`%${customer}%`]) : []),
