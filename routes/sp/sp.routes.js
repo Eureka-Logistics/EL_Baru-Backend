@@ -11,9 +11,11 @@ router.post('/create-SP', authentication, middlewareDriver.validate('createSp'),
 router.post('/get-tarif-alamat', authentication, spController.getTarifAlamat);
 router.post('/edit-SP', authentication, spController.editSp);
 router.post('/create-SP-detail', authentication, spController.createDetailSp);
+router.post('/create-SP-detail-vico', authentication, spController.createDetailSp_vico);
 // router.post('/create-SM-detail', authentication, spController.createDetailSM);
 router.post('/delete-SP-detail', authentication, spController.deleteDetailSp);
 router.post('/edit-SP-detail', authentication, spController.editSpDetail);
+router.post('/edit-SP-detail-vico', authentication, spController.editSpDetail_vico);
 router.get('/get-SP-sales', authentication, spController.getSpSales);
 router.get('/get-detail-sp', authentication, spController.getSpDetailSales);
 router.post('/solved-issue', authentication, spController.solvedIssue);
@@ -80,6 +82,7 @@ router.get('/get-SP-all-filter', authentication, spController.getFilterSp);
 router.get('/get-SP-all', authentication, spController.getSpListAll2);
 router.get('/export-sp-list-excel', authentication, spController.exportSpListExcel);
 router.get('/get-SP-all-approve', authentication, spController.getSpListApprove);
+router.get('/get-SP-all-detail-vico', authentication, spController.getSpListAllDetail_vico);
 router.get('/get-SP-all-detail', authentication, spController.getSpListAllDetail);
 
 router.get('/get-lost-sales', authentication, spController.getLostSales);
