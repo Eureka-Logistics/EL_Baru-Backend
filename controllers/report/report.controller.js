@@ -721,7 +721,7 @@ exports.getApHarian = async (req, res) => {
 
         const data = results || [];
 
-        // Inisialisasi total qty dan nilai per hari
+        // Hitung total qty dan nilai per hari (gabungan semua id_bu)
         let totalQtyHarian = {
             total_qty_hari_ini: 0,
             total_qty_h1: 0,
@@ -742,23 +742,38 @@ exports.getApHarian = async (req, res) => {
             total_nilai_h6: 0
         };
 
-        // Hitung total dari semua data
         data.forEach(item => {
-            totalQtyHarian.total_qty_hari_ini += parseFloat(item.qty_hari_ini || 0);
-            totalQtyHarian.total_qty_h1 += parseFloat(item.qty_h1 || 0);
-            totalQtyHarian.total_qty_h2 += parseFloat(item.qty_h2 || 0);
-            totalQtyHarian.total_qty_h3 += parseFloat(item.qty_h3 || 0);
-            totalQtyHarian.total_qty_h4 += parseFloat(item.qty_h4 || 0);
-            totalQtyHarian.total_qty_h5 += parseFloat(item.qty_h5 || 0);
-            totalQtyHarian.total_qty_h6 += parseFloat(item.qty_h6 || 0);
+            const qtyHariIni = parseFloat(item.qty_hari_ini || 0);
+            const qtyH1 = parseFloat(item.qty_h1 || 0);
+            const qtyH2 = parseFloat(item.qty_h2 || 0);
+            const qtyH3 = parseFloat(item.qty_h3 || 0);
+            const qtyH4 = parseFloat(item.qty_h4 || 0);
+            const qtyH5 = parseFloat(item.qty_h5 || 0);
+            const qtyH6 = parseFloat(item.qty_h6 || 0);
 
-            totalNilaiHarian.total_nilai_hari_ini += parseFloat(item.nilai_hari_ini || 0);
-            totalNilaiHarian.total_nilai_h1 += parseFloat(item.nilai_h1 || 0);
-            totalNilaiHarian.total_nilai_h2 += parseFloat(item.nilai_h2 || 0);
-            totalNilaiHarian.total_nilai_h3 += parseFloat(item.nilai_h3 || 0);
-            totalNilaiHarian.total_nilai_h4 += parseFloat(item.nilai_h4 || 0);
-            totalNilaiHarian.total_nilai_h5 += parseFloat(item.nilai_h5 || 0);
-            totalNilaiHarian.total_nilai_h6 += parseFloat(item.nilai_h6 || 0);
+            const nilaiHariIni = parseFloat(item.nilai_hari_ini || 0);
+            const nilaiH1 = parseFloat(item.nilai_h1 || 0);
+            const nilaiH2 = parseFloat(item.nilai_h2 || 0);
+            const nilaiH3 = parseFloat(item.nilai_h3 || 0);
+            const nilaiH4 = parseFloat(item.nilai_h4 || 0);
+            const nilaiH5 = parseFloat(item.nilai_h5 || 0);
+            const nilaiH6 = parseFloat(item.nilai_h6 || 0);
+
+            totalQtyHarian.total_qty_hari_ini += qtyHariIni;
+            totalQtyHarian.total_qty_h1 += qtyH1;
+            totalQtyHarian.total_qty_h2 += qtyH2;
+            totalQtyHarian.total_qty_h3 += qtyH3;
+            totalQtyHarian.total_qty_h4 += qtyH4;
+            totalQtyHarian.total_qty_h5 += qtyH5;
+            totalQtyHarian.total_qty_h6 += qtyH6;
+
+            totalNilaiHarian.total_nilai_hari_ini += nilaiHariIni;
+            totalNilaiHarian.total_nilai_h1 += nilaiH1;
+            totalNilaiHarian.total_nilai_h2 += nilaiH2;
+            totalNilaiHarian.total_nilai_h3 += nilaiH3;
+            totalNilaiHarian.total_nilai_h4 += nilaiH4;
+            totalNilaiHarian.total_nilai_h5 += nilaiH5;
+            totalNilaiHarian.total_nilai_h6 += nilaiH6;
         });
 
         output = {
