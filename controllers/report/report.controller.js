@@ -496,147 +496,136 @@ exports.getInvoiceHarian = async (req, res) => {
 exports.getPenyerahanHarian = async (req, res) => {
     try {
         const sequelize = core.dbConnect();
-        
-        // Hitung tanggal range untuk optimasi index (mengganti DATE() function)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const sixDaysAgo = new Date(today);
-        sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
-        
-        // Hitung range untuk setiap hari (H-0 sampai H-6) untuk menghindari DATE() function
-        const getDayRange = (daysAgo) => {
-            const day = new Date(today);
-            day.setDate(day.getDate() - daysAgo);
-            const dayStart = new Date(day);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(day);
-            dayEnd.setHours(23, 59, 59, 999);
-            return {
-                start: dayStart.toISOString().slice(0, 19).replace('T', ' '),
-                end: dayEnd.toISOString().slice(0, 19).replace('T', ' ')
-            };
-        };
-
-        const h0 = getDayRange(0);
-        const h1 = getDayRange(1);
-        const h2 = getDayRange(2);
-        const h3 = getDayRange(3);
-        const h4 = getDayRange(4);
-        const h5 = getDayRange(5);
-        const h6 = getDayRange(6);
-        
-        const todayEndStr = h0.end;
-        const sixDaysAgoStr = sixDaysAgo.toISOString().slice(0, 19).replace('T', ' ');
-
-        // Query untuk data penyerahan harian - menggunakan range comparison tanpa DATE() function
+       
+        // Query disamakan dengan implementasi PHP get_penyerahan_harian
         let sql = `SELECT 
             b.id_bu,
             b.nama_lengkap,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_hari_ini,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_hari_ini,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h1,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h1,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h2,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h2,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h3,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h3,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h4,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h4,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h5,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h5,
-            COUNT(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN 1 END) AS qty_h6,
-            IFNULL(SUM(CASE WHEN a.diserahkan >= ? AND a.diserahkan <= ? THEN d.total END), 0) AS nilai_h6
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() THEN 1 END) AS qty_hari_ini,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() THEN d.total END), 0) AS nilai_hari_ini,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 1 DAY THEN 1 END) AS qty_h1,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 1 DAY THEN d.total END), 0) AS nilai_h1,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 2 DAY THEN 1 END) AS qty_h2,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 2 DAY THEN d.total END), 0) AS nilai_h2,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 3 DAY THEN 1 END) AS qty_h3,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 3 DAY THEN d.total END), 0) AS nilai_h3,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 4 DAY THEN 1 END) AS qty_h4,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 4 DAY THEN d.total END), 0) AS nilai_h4,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 5 DAY THEN 1 END) AS qty_h5,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 5 DAY THEN d.total END), 0) AS nilai_h5,
+            COUNT(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 6 DAY THEN 1 END) AS qty_h6,
+            IFNULL(SUM(CASE WHEN DATE(a.diserahkan) = CURDATE() - INTERVAL 6 DAY THEN d.total END), 0) AS nilai_h6
         FROM m_sm_receive a
         INNER JOIN users b ON b.id = a.id_user
         INNER JOIN m_sm c ON c.id_msm = a.id_msm
         INNER JOIN m_pengadaan_detail d ON d.id_mpd = c.id_mpd
         WHERE a.divisi = 'operasional' 
             AND a.diserahkan IS NOT NULL 
-            AND a.diserahkan >= ? AND a.diserahkan <= ?
+            AND DATE(a.diserahkan) >= CURDATE() - INTERVAL 6 DAY
         GROUP BY b.id_bu, b.nama_lengkap  
         ORDER BY b.id_bu ASC`;
 
         const results = await sequelize.query(sql, {
-            replacements: [
-                h0.start, h0.end, h0.start, h0.end,  // hari ini
-                h1.start, h1.end, h1.start, h1.end,  // h-1
-                h2.start, h2.end, h2.start, h2.end,  // h-2
-                h3.start, h3.end, h3.start, h3.end,  // h-3
-                h4.start, h4.end, h4.start, h4.end,  // h-4
-                h5.start, h5.end, h5.start, h5.end,  // h-5
-                h6.start, h6.end, h6.start, h6.end,  // h-6
-                sixDaysAgoStr, todayEndStr  // WHERE clause
-            ],
             type: Sequelize.QueryTypes.SELECT
         });
 
         const data = results || [];
+
+        // Hitung agregat Penyerahan EL (id_bu 11) dan RACE (id_bu 21) hari ini
+        let totalQtyELHariIni = 0;
+        let totalNilaiELHariIni = 0;
+        let totalQtyRACEHariIni = 0;
+        let totalNilaiRACEHariIni = 0;
+
+        // Hitung total per kolom qty_hari_ini, qty_h1, ..., qty_h6 dan nilai_hari_ini, ..., nilai_h6
+        let totalQtyHarian = {
+            total_qty_hari_ini: 0,
+            total_qty_h1: 0,
+            total_qty_h2: 0,
+            total_qty_h3: 0,
+            total_qty_h4: 0,
+            total_qty_h5: 0,
+            total_qty_h6: 0
+        };
+
+        let totalNilaiHarian = {
+            total_nilai_hari_ini: 0,
+            total_nilai_h1: 0,
+            total_nilai_h2: 0,
+            total_nilai_h3: 0,
+            total_nilai_h4: 0,
+            total_nilai_h5: 0,
+            total_nilai_h6: 0
+        };
+
+        data.forEach(item => {
+            const idBu = item.id_bu;
+
+            const qtyHariIni = parseFloat(item.qty_hari_ini || 0);
+            const qtyH1 = parseFloat(item.qty_h1 || 0);
+            const qtyH2 = parseFloat(item.qty_h2 || 0);
+            const qtyH3 = parseFloat(item.qty_h3 || 0);
+            const qtyH4 = parseFloat(item.qty_h4 || 0);
+            const qtyH5 = parseFloat(item.qty_h5 || 0);
+            const qtyH6 = parseFloat(item.qty_h6 || 0);
+
+            const nilaiHariIni = parseFloat(item.nilai_hari_ini || 0);
+            const nilaiH1 = parseFloat(item.nilai_h1 || 0);
+            const nilaiH2 = parseFloat(item.nilai_h2 || 0);
+            const nilaiH3 = parseFloat(item.nilai_h3 || 0);
+            const nilaiH4 = parseFloat(item.nilai_h4 || 0);
+            const nilaiH5 = parseFloat(item.nilai_h5 || 0);
+            const nilaiH6 = parseFloat(item.nilai_h6 || 0);
+
+            // Total per id_bu untuk hari ini
+            if (idBu === '11' || idBu === 11) {
+                totalQtyELHariIni += qtyHariIni;
+                totalNilaiELHariIni += nilaiHariIni;
+            } else if (idBu === '21' || idBu === 21) {
+                totalQtyRACEHariIni += qtyHariIni;
+                totalNilaiRACEHariIni += nilaiHariIni;
+            }
+
+            // Total keseluruhan per hari (semua id_bu)
+            totalQtyHarian.total_qty_hari_ini += qtyHariIni;
+            totalQtyHarian.total_qty_h1 += qtyH1;
+            totalQtyHarian.total_qty_h2 += qtyH2;
+            totalQtyHarian.total_qty_h3 += qtyH3;
+            totalQtyHarian.total_qty_h4 += qtyH4;
+            totalQtyHarian.total_qty_h5 += qtyH5;
+            totalQtyHarian.total_qty_h6 += qtyH6;
+
+            totalNilaiHarian.total_nilai_hari_ini += nilaiHariIni;
+            totalNilaiHarian.total_nilai_h1 += nilaiH1;
+            totalNilaiHarian.total_nilai_h2 += nilaiH2;
+            totalNilaiHarian.total_nilai_h3 += nilaiH3;
+            totalNilaiHarian.total_nilai_h4 += nilaiH4;
+            totalNilaiHarian.total_nilai_h5 += nilaiH5;
+            totalNilaiHarian.total_nilai_h6 += nilaiH6;
+        });
 
         output = {
             status: {
                 code: 200,
                 message: 'Success get Data Penyerahan Harian'
             },
-            data: data
-        };
-
-    } catch (error) {
-        output = {
-            status: {
-                code: 500,
-                message: error.message
-            }
-        };
-    }
-
-    const errorsFromMiddleware = await customErrorMiddleware(req);
-
-    if (!errorsFromMiddleware) {
-        res.status(output.status.code).send(output);
-    } else {
-        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
-    }
-}
-
-exports.getBelumInvoice = async (req, res) => {
-    try {
-        const sequelize = core.dbConnect();
-
-        let sql = `SELECT id_bu, tahun, COUNT(DISTINCT id_msm) AS jml, SUM(total) AS nilai
-            FROM (
-              SELECT a.id_bu, a.id_msm, YEAR(a.tgl_muat) AS tahun, d.total
-              FROM m_sm a
-              JOIN m_sm_receive b ON b.id_msm = a.id_msm
-              JOIN m_pengadaan_detail d ON d.id_mpd = a.id_mpd
-              JOIN m_pengadaan e ON e.id_mp = d.id_mp
-              JOIN m_status_order f ON f.id_mp = e.id_mp
-              LEFT JOIN m_ar_detail c ON c.id_msm = a.id_msm
-              WHERE f.kendaraan_purchasing = 'Y' 
-                AND c.id_ard IS NULL 
-                AND a.msm != '' 
-                AND e.status != 0 
-                AND YEAR(a.tgl_muat) > 2023
-                AND (
-                  (a.id_bu = '11' AND b.divisi = 'ar' AND b.status = 'receive') OR
-                  (a.id_bu = '21' AND b.divisi = 'operasional' AND b.diserahkan IS NOT NULL)
-                )
-              GROUP BY a.id_msm
-            ) x
-            GROUP BY id_bu, tahun
-            ORDER BY id_bu, tahun`;
-
-        const results = await sequelize.query(sql, {
-            type: Sequelize.QueryTypes.SELECT
-        });
-
-        const data = results || [];
-
-        output = {
-            status: {
-                code: 200,
-                message: 'Success get Data Belum Invoice'
+            data: data,
+            penyerahan_hari_ini: {
+                penyerahan_el_hari_ini: {
+                    nama: 'Penyerahan EL hari ini',
+                    total_qty: totalQtyELHariIni,
+                    total_nilai: totalNilaiELHariIni
+                },
+                penyerahan_race_hari_ini: {
+                    nama: 'Penyerahan RACE hari ini',
+                    total_qty: totalQtyRACEHariIni,
+                    total_nilai: totalNilaiRACEHariIni
+                }
             },
-            data: data
+            total: {
+                ...totalQtyHarian,
+                ...totalNilaiHarian
+            }
         };
 
     } catch (error) {
