@@ -721,12 +721,56 @@ exports.getApHarian = async (req, res) => {
 
         const data = results || [];
 
+        // Inisialisasi total qty dan nilai per hari
+        let totalQtyHarian = {
+            total_qty_hari_ini: 0,
+            total_qty_h1: 0,
+            total_qty_h2: 0,
+            total_qty_h3: 0,
+            total_qty_h4: 0,
+            total_qty_h5: 0,
+            total_qty_h6: 0
+        };
+
+        let totalNilaiHarian = {
+            total_nilai_hari_ini: 0,
+            total_nilai_h1: 0,
+            total_nilai_h2: 0,
+            total_nilai_h3: 0,
+            total_nilai_h4: 0,
+            total_nilai_h5: 0,
+            total_nilai_h6: 0
+        };
+
+        // Hitung total dari semua data
+        data.forEach(item => {
+            totalQtyHarian.total_qty_hari_ini += parseFloat(item.qty_hari_ini || 0);
+            totalQtyHarian.total_qty_h1 += parseFloat(item.qty_h1 || 0);
+            totalQtyHarian.total_qty_h2 += parseFloat(item.qty_h2 || 0);
+            totalQtyHarian.total_qty_h3 += parseFloat(item.qty_h3 || 0);
+            totalQtyHarian.total_qty_h4 += parseFloat(item.qty_h4 || 0);
+            totalQtyHarian.total_qty_h5 += parseFloat(item.qty_h5 || 0);
+            totalQtyHarian.total_qty_h6 += parseFloat(item.qty_h6 || 0);
+
+            totalNilaiHarian.total_nilai_hari_ini += parseFloat(item.nilai_hari_ini || 0);
+            totalNilaiHarian.total_nilai_h1 += parseFloat(item.nilai_h1 || 0);
+            totalNilaiHarian.total_nilai_h2 += parseFloat(item.nilai_h2 || 0);
+            totalNilaiHarian.total_nilai_h3 += parseFloat(item.nilai_h3 || 0);
+            totalNilaiHarian.total_nilai_h4 += parseFloat(item.nilai_h4 || 0);
+            totalNilaiHarian.total_nilai_h5 += parseFloat(item.nilai_h5 || 0);
+            totalNilaiHarian.total_nilai_h6 += parseFloat(item.nilai_h6 || 0);
+        });
+
         output = {
             status: {
                 code: 200,
                 message: 'Success get Data AP Harian'
             },
-            data: data
+            data: data,
+            total: {
+                ...totalQtyHarian,
+                ...totalNilaiHarian
+            }
         };
 
     } catch (error) {
