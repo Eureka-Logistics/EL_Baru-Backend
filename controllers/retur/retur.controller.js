@@ -499,16 +499,21 @@ exports.createRetur = async (req, res) => {
     } = req.body;
 
     // Normalize optional fields to avoid undefined bindings
-    const toNullIfUndefined = (v) => (typeof v === 'undefined' ? null : v);
-    const kategoriX = toNullIfUndefined(kategori);
-    const keteranganX = toNullIfUndefined(keterangan);
-    const fotoX = toNullIfUndefined(foto);
-    const penerimaX = toNullIfUndefined(penerima);
-    const alasanX = toNullIfUndefined(alasan);
-    const idPoolX = toNullIfUndefined(id_pool);
-    const idAdminX = toNullIfUndefined(id_admin);
-    const pihakDibebankanX = toNullIfUndefined(pihak_dibebankan);
-    const createdByNameX = toNullIfUndefined(created_by_name);
+    // Convert undefined or empty string to null for nullable fields
+    const toNullIfEmpty = (v) => {
+      if (typeof v === 'undefined' || v === null) return null;
+      if (typeof v === 'string' && v.trim() === '') return null;
+      return v;
+    };
+    const kategoriX = toNullIfEmpty(kategori);
+    const keteranganX = toNullIfEmpty(keterangan);
+    const fotoX = toNullIfEmpty(foto);
+    const penerimaX = toNullIfEmpty(penerima);
+    const alasanX = toNullIfEmpty(alasan);
+    const idPoolX = toNullIfEmpty(id_pool);
+    const idAdminX = toNullIfEmpty(id_admin);
+    const pihakDibebankanX = toNullIfEmpty(pihak_dibebankan);
+    const createdByNameX = toNullIfEmpty(created_by_name);
 
     // Generate no_retur automatically with new format
     const no_retur = await generateNoRetur();
@@ -644,44 +649,61 @@ exports.createRetur = async (req, res) => {
 // Helper function to generate no_retur automatically
 async function generateNoRetur() {
   try {
-    const currentYear = new Date().getFullYear().toString().slice(-2); // Get last 2 digits of year
+    const now = new Date();
+    const currentYear = now.getFullYear().toString().slice(-2); // Get last 2 digits of year
+    const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0'); // Get month (01-12)
     
     console.log('=== GENERATING NO_RETUR ===');
     console.log('Current year:', currentYear);
+    console.log('Current month:', currentMonth);
     
-    // Find the latest retur number for this year to continue the sequence
-    const latestRetur = await db.query(
-      `SELECT no_retur FROM m_sm_retur 
-       WHERE no_retur LIKE ? 
-       ORDER BY no_retur DESC 
-       LIMIT 1`,
-      [`RT${currentYear}%`]
-    );
+    // Build prefix for current year and month: RT{YY}{MM}
+    const yearMonthPrefix = `RT${currentYear}${currentMonth}`;
+    
+    // Find the latest retur number for this year and month to continue the sequence
+    let latestRetur = null;
+    try {
+      const result = await db.query(
+        `SELECT no_retur FROM m_sm_retur 
+         WHERE no_retur LIKE ? 
+         ORDER BY no_retur DESC 
+         LIMIT 1`,
+        [`${yearMonthPrefix}%`]
+      );
+      
+      if (result && Array.isArray(result) && result.length > 0 && result[0].no_retur) {
+        latestRetur = result[0].no_retur;
+        console.log('Latest retur found for current month:', latestRetur);
+      }
+    } catch (queryError) {
+      console.error('Error querying latest retur:', queryError);
+      // Continue with default sequence if query fails
+    }
 
     let nextSequence = 1;
-    let yearMonthPrefix = `RT${currentYear}01`; // Default to month 01
 
-    if (latestRetur && latestRetur.length > 0 && latestRetur[0].no_retur) {
-      console.log('Latest retur found:', latestRetur[0].no_retur);
+    if (latestRetur) {
+      // Extract the sequence from the latest retur
+      // Format: RT{YY}{MM}{SS} where SS is 2-digit sequence
+      // Example: RT250101 means RT + 25(year) + 01(month) + 01(sequence)
+      const noReturLength = latestRetur.length;
       
-      // Extract the month and sequence from the latest retur
-      const monthPart = latestRetur[0].no_retur.substring(4, 6); // Get month (01-12)
-      const sequencePart = latestRetur[0].no_retur.substring(6, 8); // Get sequence
-      const currentSequence = parseInt(sequencePart, 10);
-      
-      console.log('Extracted month:', monthPart);
-      console.log('Extracted sequence:', sequencePart, 'Parsed as:', currentSequence);
-      
-      if (!isNaN(currentSequence)) {
-        nextSequence = currentSequence + 1;
-        console.log('Next sequence will be:', nextSequence);
+      if (noReturLength >= 8) {
+        // Extract last 2 digits as sequence
+        const sequencePart = latestRetur.substring(6, 8);
+        const currentSequence = parseInt(sequencePart, 10);
         
-        // Use the same month as the latest retur
-        yearMonthPrefix = `RT${currentYear}${monthPart}`;
-        console.log('Using month from latest retur:', monthPart);
+        console.log('Extracted sequence:', sequencePart, 'Parsed as:', currentSequence);
+        
+        if (!isNaN(currentSequence) && currentSequence >= 0) {
+          nextSequence = currentSequence + 1;
+          console.log('Next sequence will be:', nextSequence);
+        }
+      } else {
+        console.log('Latest retur format unexpected, starting with sequence 01');
       }
     } else {
-      console.log('No existing retur found for this year, starting with 01');
+      console.log('No existing retur found for current month, starting with 01');
     }
 
     // Check if sequence exceeds maximum (99 for 2-digit format)
@@ -700,6 +722,7 @@ async function generateNoRetur() {
     
   } catch (error) {
     console.error('Error generating no_retur:', error);
+    console.error('Error stack:', error.stack);
     return null;
   }
 }
@@ -804,15 +827,20 @@ exports.updateRetur = async (req, res) => {
     } = req.body;
 
     // Normalize optional fields to avoid undefined bindings
-    const toNullIfUndefined = (v) => (typeof v === 'undefined' ? null : v);
-    const kategoriX = toNullIfUndefined(kategori);
-    const keteranganX = toNullIfUndefined(keterangan);
-    const fotoX = toNullIfUndefined(foto);
-    const penerimaX = toNullIfUndefined(penerima);
-    const alasanX = toNullIfUndefined(alasan);
-    const idPoolX = toNullIfUndefined(id_pool);
-    const idAdminX = toNullIfUndefined(id_admin);
-    const pihakDibebankanX = toNullIfUndefined(pihak_dibebankan);
+    // Convert undefined or empty string to null for nullable fields
+    const toNullIfEmpty = (v) => {
+      if (typeof v === 'undefined' || v === null) return null;
+      if (typeof v === 'string' && v.trim() === '') return null;
+      return v;
+    };
+    const kategoriX = toNullIfEmpty(kategori);
+    const keteranganX = toNullIfEmpty(keterangan);
+    const fotoX = toNullIfEmpty(foto);
+    const penerimaX = toNullIfEmpty(penerima);
+    const alasanX = toNullIfEmpty(alasan);
+    const idPoolX = toNullIfEmpty(id_pool);
+    const idAdminX = toNullIfEmpty(id_admin);
+    const pihakDibebankanX = toNullIfEmpty(pihak_dibebankan);
 
     await db.query(
       `UPDATE m_sm_retur SET
@@ -845,7 +873,7 @@ exports.updateRetur = async (req, res) => {
       const totalNominal = Array.isArray(detail)
         ? detail.reduce((sum, d) => sum + (Number(d.nilai_barang) || 0), 0)
         : 0;
-
+ 
       const editorUserId = (req.user && (req.user.id_user || req.user.id))
         ? (req.user.id_user || req.user.id)
         : (id_admin || null);
