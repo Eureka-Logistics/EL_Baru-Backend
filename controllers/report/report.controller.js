@@ -1129,70 +1129,29 @@ exports.getUjHarian = async (req, res) => {
     try {
         const sequelize = core.dbConnect();
         
-        // Hitung tanggal range untuk optimasi index (mengganti DATE() function)
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const sixDaysAgo = new Date(today);
-        sixDaysAgo.setDate(sixDaysAgo.getDate() - 6);
-        
-        // Hitung range untuk setiap hari (H-0 sampai H-6) untuk menghindari DATE() function
-        const getDayRange = (daysAgo) => {
-            const day = new Date(today);
-            day.setDate(day.getDate() - daysAgo);
-            const dayStart = new Date(day);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(day);
-            dayEnd.setHours(23, 59, 59, 999);
-            return {
-                start: dayStart.toISOString().slice(0, 19).replace('T', ' '),
-                end: dayEnd.toISOString().slice(0, 19).replace('T', ' ')
-            };
-        };
-
-        const h0 = getDayRange(0);
-        const h1 = getDayRange(1);
-        const h2 = getDayRange(2);
-        const h3 = getDayRange(3);
-        const h4 = getDayRange(4);
-        const h5 = getDayRange(5);
-        const h6 = getDayRange(6);
-        
-        const todayEndStr = h0.end;
-        const sixDaysAgoStr = sixDaysAgo.toISOString().slice(0, 19).replace('T', ' ');
-
-        // Query untuk data UJ harian - menggunakan range comparison tanpa DATE() function
+        // Query disamakan persis dengan implementasi PHP get_uj_harian
         let sql = `SELECT 
             c.name_bu_brench,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_hari_ini,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_hari_ini,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h1,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h1,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h2,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h2,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h3,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h3,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h4,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h4,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h5,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h5,
-            COUNT(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN 1 END) AS qty_h6,
-            IFNULL(SUM(CASE WHEN a.transfer_at >= ? AND a.transfer_at <= ? THEN a.total_semua END), 0) AS nilai_h6
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() THEN 1 END) AS qty_hari_ini,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() THEN a.total_semua END), 0) AS nilai_hari_ini,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 1 DAY THEN 1 END) AS qty_h1,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 1 DAY THEN a.total_semua END), 0) AS nilai_h1,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 2 DAY THEN 1 END) AS qty_h2,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 2 DAY THEN a.total_semua END), 0) AS nilai_h2,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 3 DAY THEN 1 END) AS qty_h3,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 3 DAY THEN a.total_semua END), 0) AS nilai_h3,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 4 DAY THEN 1 END) AS qty_h4,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 4 DAY THEN a.total_semua END), 0) AS nilai_h4,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 5 DAY THEN 1 END) AS qty_h5,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 5 DAY THEN a.total_semua END), 0) AS nilai_h5,
+            COUNT(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 6 DAY THEN 1 END) AS qty_h6,
+            IFNULL(SUM(CASE WHEN DATE(a.transfer_at) = CURDATE() - INTERVAL 6 DAY THEN a.total_semua END), 0) AS nilai_h6
         FROM uang_jalan_new a
         INNER JOIN m_bu_brench c ON c.id_bu_brench = a.id_bu_brench
-        WHERE a.transfer_at >= ? AND a.transfer_at <= ?
-        GROUP BY a.id_bu_brench, c.name_bu_brench`;
+        WHERE DATE(a.transfer_at) >= CURDATE() - INTERVAL 6 DAY
+        GROUP BY a.id_bu_brench`;
 
         const results = await sequelize.query(sql, {
-            replacements: [
-                h0.start, h0.end, h0.start, h0.end,  // hari ini
-                h1.start, h1.end, h1.start, h1.end,  // h-1
-                h2.start, h2.end, h2.start, h2.end,  // h-2
-                h3.start, h3.end, h3.start, h3.end,  // h-3
-                h4.start, h4.end, h4.start, h4.end,  // h-4
-                h5.start, h5.end, h5.start, h5.end,  // h-5
-                h6.start, h6.end, h6.start, h6.end,  // h-6
-                sixDaysAgoStr, todayEndStr  // WHERE clause
-            ],
             type: Sequelize.QueryTypes.SELECT
         });
 
