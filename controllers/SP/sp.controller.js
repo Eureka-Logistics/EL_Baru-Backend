@@ -6,6 +6,7 @@ const { mode } = require('crypto-js');
 const e = require('express');
 const CryptoJS = core.CryptoJS
 const db = require("../../config/db.config");
+const mysql = require('mysql2');
 const ExcelJS = require('exceljs');
 
 
@@ -9573,7 +9574,32 @@ exports.getSpListAll2 = async (req, res) => {
             ...(req.query.tgl_pickup && { tgl_pickup: req.query.tgl_pickup }),
             ...(req.query.statusSP && { status: req.query.statusSP }),
             ...(req.query.keyword && {
-                [Op.or]: [{ msp: { [Op.like]: `%${req.query.keyword}%` } }]
+                [Op.or]: [
+                    { msp: { [Op.like]: `%${req.query.keyword}%` } }, // No SO
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM customer 
+                        WHERE customer.id_customer = m_pengadaan.id_customer 
+                        AND customer.nama_perusahaan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                    )`), // Perusahaan
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM users 
+                        WHERE users.id = m_pengadaan.id_sales 
+                        AND users.nama_lengkap LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                    )`), // Marketing
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM m_pengadaan_detail 
+                        WHERE m_pengadaan_detail.id_mp = m_pengadaan.id_mp 
+                        AND m_pengadaan_detail.kendaraan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                    )`), // Vehicle
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM m_pengadaan_detail mpd
+                        INNER JOIN alamat a1 ON a1.id = mpd.id_almuat
+                        INNER JOIN alamat a2 ON a2.id = mpd.id_albongkar
+                        WHERE mpd.id_mp = m_pengadaan.id_mp 
+                        AND (a1.kota LIKE ${mysql.escape('%' + req.query.keyword + '%')} 
+                             OR a2.kota LIKE ${mysql.escape('%' + req.query.keyword + '%')})
+                    )`) // Destination
+                ]
             })
         };
 
@@ -12753,6 +12779,94 @@ const updatePengadaanDetailCost = async (id_mpd, cost_type, amount, is_ditagihka
 };
 
 // CREATE - Tambah biaya detail SJ
+// exports.createSmCost = async (req, res) => {
+//     try {
+//         const {
+//             id_msm,
+//             cost_type,
+//             qty,
+//             price,
+//             tax,
+//             discount_type,
+//             discount_value,
+//             is_ditagihkan
+//         } = req.body;
+
+//         // Validasi input
+//         if (!id_msm || !cost_type || !qty || !price || !tax || !discount_value || is_ditagihkan === undefined) {
+//             return res.status(400).json({
+//                 status: {
+//                     code: 400,
+//                     message: 'Semua field wajib diisi'
+//                 }
+//             });
+//         }
+
+//         // Hitung amount
+//         const subtotal = qty * price;
+//         const discountAmount = discount_type === 'percentage' ? 
+//             (subtotal * discount_value / 100) : discount_value;
+//         const afterDiscount = subtotal - discountAmount;
+//         const taxAmount = afterDiscount * tax / 100;
+//         const amount = afterDiscount + taxAmount;
+
+//         // Cek apakah SM ada dan dapatkan id_mpd
+//         const sm = await models.m_sm.findOne({
+//             where: { id_msm: id_msm }
+//         });
+
+//         if (!sm) {
+//             return res.status(404).json({
+//                 status: {
+//                     code: 404,
+//                     message: 'SM tidak ditemukan'
+//                 }
+//             });
+//         }
+
+//         // Create m_sm_cost
+//         const newCost = await models.m_sm_cost.create({
+//             id_msm: id_msm,
+//             cost_type: cost_type,
+//             qty: qty,
+//             price: price,
+//             tax: tax,
+//             discount_type: discount_type,
+//             discount_value: discount_value,
+//             is_ditagihkan: is_ditagihkan,
+//             is_approve: '0', // Default status: pending
+//             amount: amount,
+//             created_by: req.user.id,
+//             created_at: new Date(),
+//             modified_at: new Date()
+//         });
+
+//         // Update m_pengadaan_detail jika is_ditagihkan = 0 dan is_approve = 1 (approved)
+//         if (is_ditagihkan === 0) {
+//             await updatePengadaanDetailCost(sm.id_mpd, cost_type, amount, is_ditagihkan, '0');
+//         }
+
+//         return res.status(201).json({
+//             status: {
+//                 code: 201,
+//                 message: 'Biaya detail SJ berhasil ditambahkan'
+//             },
+//             data: newCost
+//         });
+
+//     } catch (error) {
+//         console.error('Error in createSmCost:', error);
+//         return res.status(500).json({
+//             status: {
+//                 code: 500,
+//                 message: 'Server error',
+//                 error: error.message
+//             }
+//         });
+//     }
+// };
+
+// CREATE - Tambah biaya detail SJ (hanya ke m_sm_cost, tidak update msm)
 exports.createSmCost = async (req, res) => {
     try {
         const {
@@ -12784,20 +12898,6 @@ exports.createSmCost = async (req, res) => {
         const taxAmount = afterDiscount * tax / 100;
         const amount = afterDiscount + taxAmount;
 
-        // Cek apakah SM ada dan dapatkan id_mpd
-        const sm = await models.m_sm.findOne({
-            where: { id_msm: id_msm }
-        });
-
-        if (!sm) {
-            return res.status(404).json({
-                status: {
-                    code: 404,
-                    message: 'SM tidak ditemukan'
-                }
-            });
-        }
-
         // Create m_sm_cost
         const newCost = await models.m_sm_cost.create({
             id_msm: id_msm,
@@ -12814,11 +12914,6 @@ exports.createSmCost = async (req, res) => {
             created_at: new Date(),
             modified_at: new Date()
         });
-
-        // Update m_pengadaan_detail jika is_ditagihkan = 0 dan is_approve = 1 (approved)
-        if (is_ditagihkan === 0) {
-            await updatePengadaanDetailCost(sm.id_mpd, cost_type, amount, is_ditagihkan, '0');
-        }
 
         return res.status(201).json({
             status: {
