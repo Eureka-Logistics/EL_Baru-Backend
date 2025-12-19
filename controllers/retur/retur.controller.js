@@ -873,7 +873,7 @@ exports.updateRetur = async (req, res) => {
       const totalNominal = Array.isArray(detail)
         ? detail.reduce((sum, d) => sum + (Number(d.nilai_barang) || 0), 0)
         : 0;
-
+ 
       const editorUserId = (req.user && (req.user.id_user || req.user.id))
         ? (req.user.id_user || req.user.id)
         : (id_admin || null);
