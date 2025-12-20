@@ -7,8 +7,10 @@ const middlewareDriver = require('../../middleware/sp.middleware')
 //sales
 router.get('/get-SP-select-create', authentication, spController.getSelectCreateSp);
 router.get('/get-SP-select-detail', authentication, spController.getSelectDetailSp);
+router.get('/get-list-alamat', authentication, spController.getListAlamat);
 router.post('/create-SP', authentication, middlewareDriver.validate('createSp'), spController.createSp);
 router.post('/get-tarif-alamat', authentication, spController.getTarifAlamat);
+router.post('/ganti-alamat', authentication, spController.gantiAlamat);
 router.post('/edit-SP', authentication, spController.editSp);
 router.post('/create-SP-detail', authentication, spController.createDetailSp);
 router.post('/create-SP-detail-vico', authentication, spController.createDetailSp_vico);
