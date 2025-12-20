@@ -4239,6 +4239,7 @@ exports.getSelectCancelDo = async (req, res) => {
 }
 
 exports.cancelDoSp = async (req, res) => {
+    let output = {}
     try {
         const getUser = await models.users.findOne(
             {
@@ -4248,7 +4249,7 @@ exports.cancelDoSp = async (req, res) => {
             }
 
         )
-        const getCancelDo = await models.m_pengadaan_do.findOne(
+        const getPengadaan = await models.m_pengadaan.findOne(
             {
                 where: {
                     id_mp: req.body.id_mp
@@ -4256,8 +4257,33 @@ exports.cancelDoSp = async (req, res) => {
             }
         )
 
+        // Normalisasi status untuk perbandingan (handle string dan number)
+        // Status 0 atau "0" berarti sudah di cancel
+        let isAlreadyCancelled = false
+        if (getPengadaan && getPengadaan.status !== undefined && getPengadaan.status !== null) {
+            const statusValue = getPengadaan.status
+            // Cek apakah status adalah 0 (number) atau "0" (string)
+            isAlreadyCancelled = statusValue === 0 || statusValue === "0" || String(statusValue).trim() === "0"
+        }
 
-        if (getUser && !getCancelDo) {
+        // Cek apakah status sudah "0" (sudah di cancel) - HARUS DICEK DULU SEBELUM PROSES CANCEL
+        if (!getPengadaan) {
+            output = {
+                status: {
+                    code: 404,
+                    message: 'Data pengadaan tidak ditemukan'
+                },
+            }
+        } else if (isAlreadyCancelled) {
+            output = {
+                status: {
+                    code: 402,
+                    message: 'Sp ini sudah di cancel'
+                },
+            }
+        }
+        // Jika status bukan "0" dan user ada, proses cancel
+        else if (getUser && getPengadaan && !isAlreadyCancelled) {
             // const getDataAkunting = await models.m_status_order.findOne(
             //     {
             //         where: {
@@ -4332,8 +4358,22 @@ exports.cancelDoSp = async (req, res) => {
                             message: 'Success cancel sp'
                         },
                     }
+                } else {
+                    output = {
+                        status: {
+                            code: 500,
+                            message: 'Gagal update status atau create chat'
+                        },
+                    }
                 }
 
+            } else {
+                output = {
+                    status: {
+                        code: 500,
+                        message: 'Gagal create cancel do atau update sales'
+                    },
+                }
             }
             // }
             // else {
@@ -4346,16 +4386,22 @@ exports.cancelDoSp = async (req, res) => {
 
 
             // }
-        }
-
-        else {
+        } else if (!getUser) {
+            // Jika user tidak ditemukan
             output = {
                 status: {
-                    code: 402,
-                    message: 'Sp ini sudah di cancel'
+                    code: 403,
+                    message: 'User tidak ditemukan atau tidak memiliki akses'
                 },
             }
-
+        } else {
+            // Kondisi lain yang tidak ter-handle
+            output = {
+                status: {
+                    code: 500,
+                    message: 'Terjadi kesalahan saat memproses cancel'
+                },
+            }
         }
     } catch (error) {
         output = {
