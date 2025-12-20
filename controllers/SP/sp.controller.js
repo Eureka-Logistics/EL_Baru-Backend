@@ -12954,7 +12954,7 @@ exports.createSmCost = async (req, res) => {
             discount_type: discount_type,
             discount_value: discount_value,
             is_ditagihkan: is_ditagihkan,
-            is_approve: '0', // Default status: pending
+            is_approve: '1', // Default status: pending
             amount: amount,
             created_by: req.user.id,
             created_at: new Date(),
@@ -13394,5 +13394,168 @@ exports.rejectSmCost = async (req, res) => {
                 error: error.message
             }
         });
+    }
+};
+
+// GET List Alamat berdasarkan id_customer
+exports.getListAlamat = async (req, res) => {
+    let output;
+    try {
+        const { id_customer } = req.query;
+
+        if (!id_customer) {
+            output = {
+                status: {
+                    code: 400,
+                    message: 'Parameter id_customer diperlukan'
+                }
+            };
+        } else {
+            const getUser = await models.users.findOne({
+                where: {
+                    id: req.user.id
+                }
+            });
+
+            if (getUser) {
+                const listAlamat = await models.alamat.findAll({
+                    where: {
+                        id_customer: id_customer
+                    },
+                    order: [['id', 'asc']]
+                });
+
+                output = {
+                    status: {
+                        code: 200,
+                        message: 'Success get data'
+                    },
+                    data: listAlamat.map((item) => {
+                        return {
+                            id: item.id,
+                            alamat: item.alamat || '',
+                            pic: item.pic || ''
+                        };
+                    })
+                };
+            } else {
+                output = {
+                    status: {
+                        code: 401,
+                        message: 'Unauthorized'
+                    }
+                };
+            }
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        };
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req);
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output);
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+    }
+};
+
+// POST Ganti Alamat - Update id_albongkar di m_pengadaan_detail
+exports.gantiAlamat = async (req, res) => {
+    let output;
+    try {
+        const { idmpd, alamat } = req.body;
+
+        if (!idmpd || !alamat) {
+            output = {
+                status: {
+                    code: 400,
+                    message: 'Parameter idmpd dan alamat diperlukan'
+                }
+            };
+        } else {
+            const getUser = await models.users.findOne({
+                where: {
+                    id: req.user.id
+                }
+            });
+
+            if (getUser) {
+                // Cek apakah data detail dengan id_mpd tersebut ada
+                const checkDetail = await models.m_pengadaan_detail.findOne({
+                    where: {
+                        id_mpd: idmpd
+                    }
+                });
+
+                if (!checkDetail) {
+                    output = {
+                        status: {
+                            code: 404,
+                            message: 'Data pengadaan detail tidak ditemukan'
+                        }
+                    };
+                } else {
+                    // Update id_albongkar
+                    const updData = await models.m_pengadaan_detail.update(
+                        {
+                            id_albongkar: alamat
+                        },
+                        {
+                            where: {
+                                id_mpd: idmpd
+                            }
+                        }
+                    );
+
+                    if (updData) {
+                        output = {
+                            status: {
+                                code: 200,
+                                message: 'Alamat berhasil diganti'
+                            },
+                            data: {
+                                id_mpd: idmpd,
+                                id_albongkar: alamat
+                            }
+                        };
+                    } else {
+                        output = {
+                            status: {
+                                code: 500,
+                                message: 'Gagal update alamat'
+                            }
+                        };
+                    }
+                }
+            } else {
+                output = {
+                    status: {
+                        code: 401,
+                        message: 'Unauthorized'
+                    }
+                };
+            }
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        };
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req);
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output);
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
     }
 };
