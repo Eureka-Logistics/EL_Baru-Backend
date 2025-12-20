@@ -2962,6 +2962,37 @@ exports.createDetailSp_vico = async (req, res) => {
             }
         )
         if (getUser) {
+            // Validasi: jika is_multi = 0, hanya boleh create 1 detail
+            const getPengadaanForValidation = await models.m_pengadaan.findOne({
+                where: {
+                    id_mp: req.body.idMp
+                }
+            })
+
+            if (getPengadaanForValidation && getPengadaanForValidation.is_multi === 0) {
+                // Cek apakah sudah ada detail yang dibuat sebelumnya
+                const existingDetail = await models.m_pengadaan_detail.findOne({
+                    where: {
+                        id_mp: req.body.idMp
+                    }
+                })
+
+                if (existingDetail) {
+                    output = {
+                        status: {
+                            code: 400,
+                            message: 'Tidak dapat membuat detail lebih dari 1 karena SO Single Drop'
+                        }
+                    }
+                    const errorsFromMiddleware = await customErrorMiddleware(req)
+                    if (!errorsFromMiddleware) {
+                        return res.status(output.status.code).send(output)
+                    } else {
+                        return res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+                    }
+                }
+            }
+
             // Hitung total_produk
             const totalProduk = (req.body.harga || 0) * (req.body.jumlah || 0)
             
@@ -12923,11 +12954,12 @@ exports.createSmCost = async (req, res) => {
             tax,
             discount_type,
             discount_value,
-            is_ditagihkan
+            is_ditagihkan,
+            keterangan
         } = req.body;
 
         // Validasi input
-        if (!id_msm || !cost_type || !qty || !price || !tax || !discount_value || is_ditagihkan === undefined) {
+        if (!id_msm || !cost_type || !qty || !price || is_ditagihkan === undefined) {
             return res.status(400).json({
                 status: {
                     code: 400,
@@ -12938,10 +12970,10 @@ exports.createSmCost = async (req, res) => {
 
         // Hitung amount
         const subtotal = qty * price;
-        const discountAmount = discount_type === 'percentage' ? 
-            (subtotal * discount_value / 100) : discount_value;
+        const discountAmount = discount_value ? (discount_type === 'percentage' ? 
+            (subtotal * discount_value / 100) : discount_value) : 0;
         const afterDiscount = subtotal - discountAmount;
-        const taxAmount = afterDiscount * tax / 100;
+        const taxAmount = tax ? (afterDiscount * tax / 100) : 0;
         const amount = afterDiscount + taxAmount;
 
         // Create m_sm_cost
@@ -12950,12 +12982,13 @@ exports.createSmCost = async (req, res) => {
             cost_type: cost_type,
             qty: qty,
             price: price,
-            tax: tax,
+            tax: tax || null,
             discount_type: discount_type,
-            discount_value: discount_value,
+            discount_value: discount_value || null,
             is_ditagihkan: is_ditagihkan,
             is_approve: '1', // Default status: pending
             amount: amount,
+            keterangan: keterangan || null,
             created_by: req.user.id,
             created_at: new Date(),
             modified_at: new Date()

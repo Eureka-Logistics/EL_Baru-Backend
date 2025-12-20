@@ -25,7 +25,7 @@ module.exports = function(sequelize, DataTypes) {
     },
     tax: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: true
     },
     discount_type: {
       type: DataTypes.STRING(11),
@@ -33,7 +33,7 @@ module.exports = function(sequelize, DataTypes) {
     },
     discount_value: {
       type: DataTypes.INTEGER,
-      allowNull: false
+      allowNull: true
     },
     is_ditagihkan: {
       type: DataTypes.INTEGER,
@@ -47,6 +47,10 @@ module.exports = function(sequelize, DataTypes) {
     amount: {
       type: DataTypes.INTEGER,
       allowNull: false
+    },
+    keterangan: {
+      type: DataTypes.TEXT,
+      allowNull: true
     },
     created_by: {
       type: DataTypes.INTEGER,
