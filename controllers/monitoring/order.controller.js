@@ -418,7 +418,7 @@ exports.getMonitoringSJList = async (req, res) => {
       INNER JOIN m_pengadaan_detail b ON b.id_mpd = a.id_mpd 
       INNER JOIN m_pengadaan c        ON c.id_mp = b.id_mp AND c.status IN (1,2) 
       INNER JOIN customer u           ON u.id_customer = c.id_customer 
-      INNER JOIN m_status_order mso   ON mso.id_mp = c.id_mp AND mso.kendaraan_purchasing = 'Y' 
+      LEFT JOIN m_status_order mso    ON mso.id_mp = c.id_mp AND mso.kendaraan_purchasing = 'Y' 
       INNER JOIN alamat d             ON d.id = b.id_almuat 
       INNER JOIN alamat e             ON e.id = b.id_albongkar 
       INNER JOIN mitra f              ON f.id_mitra = a.id_mitra_pickup 
@@ -493,7 +493,7 @@ exports.getMonitoringSJList = async (req, res) => {
       INNER JOIN m_pengadaan_detail b ON b.id_mpd = a.id_mpd 
       INNER JOIN m_pengadaan c        ON c.id_mp = b.id_mp AND c.status IN (1,2) 
       INNER JOIN customer u           ON u.id_customer = c.id_customer 
-      INNER JOIN m_status_order mso   ON mso.id_mp = c.id_mp AND mso.kendaraan_purchasing = 'Y' 
+      LEFT JOIN m_status_order mso    ON mso.id_mp = c.id_mp AND mso.kendaraan_purchasing = 'Y' 
       INNER JOIN alamat d             ON d.id = b.id_almuat 
       INNER JOIN alamat e             ON e.id = b.id_albongkar 
       INNER JOIN mitra f              ON f.id_mitra = a.id_mitra_pickup 
