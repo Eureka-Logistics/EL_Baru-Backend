@@ -60,6 +60,10 @@ router.use('/maintenance', require('./maintenance/maintenance.routes'));
 router.use('/kiriman', require('./kiriman/kiriman.routes'));
 router.use('/pool', require('./pool/pool.routes'));
 router.use('/pool-qrcode', require('./pool_qrcode/pool_qrcode.routes'));
+router.use('/gl', require('./m_gl/m_gl.routes'));
+router.use('/asm', require('./m_asm/m_asm.routes'));
+router.use('/mgr', require('./m_mgr/m_mgr.routes'));
+router.use('/cab', require('./m_cab/m_cab.routes'));
 
 
 module.exports = router;

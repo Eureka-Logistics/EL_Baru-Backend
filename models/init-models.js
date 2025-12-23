@@ -177,6 +177,10 @@ var _m_bu_brench = require("./m_bu_brench");
 var _m_bu_employee = require("./m_bu_employee");
 var _m_bu_employee_department = require("./m_bu_employee_department");
 var _m_bu_employee_position = require("./m_bu_employee_position");
+var _m_cab = require("./m_cab");
+var _m_asm = require("./m_asm");
+var _m_gl = require("./m_gl");
+var _m_mgr = require("./m_mgr");
 var _m_chat = require("./m_chat");
 var _m_chat_email = require("./m_chat_email");
 var _m_chat_internal = require("./m_chat_internal");
@@ -557,6 +561,10 @@ function initModels(sequelize) {
   var m_bu_employee = _m_bu_employee(sequelize, DataTypes);
   var m_bu_employee_department = _m_bu_employee_department(sequelize, DataTypes);
   var m_bu_employee_position = _m_bu_employee_position(sequelize, DataTypes);
+  var m_cab = _m_cab(sequelize, DataTypes);
+  var m_asm = _m_asm(sequelize, DataTypes);
+  var m_gl = _m_gl(sequelize, DataTypes);
+  var m_mgr = _m_mgr(sequelize, DataTypes);
   var m_chat = _m_chat(sequelize, DataTypes);
   var m_chat_email = _m_chat_email(sequelize, DataTypes);
   var m_chat_internal = _m_chat_internal(sequelize, DataTypes);
@@ -964,6 +972,10 @@ function initModels(sequelize) {
     m_bu_employee,
     m_bu_employee_department,
     m_bu_employee_position,
+    m_cab,
+    m_asm,
+    m_gl,
+    m_mgr,
     m_chat,
     m_chat_email,
     m_chat_internal,
