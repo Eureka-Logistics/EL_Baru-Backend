@@ -181,6 +181,7 @@ var _m_cab = require("./m_cab");
 var _m_asm = require("./m_asm");
 var _m_gl = require("./m_gl");
 var _m_mgr = require("./m_mgr");
+var _m_sales = require("./m_sales");
 var _m_chat = require("./m_chat");
 var _m_chat_email = require("./m_chat_email");
 var _m_chat_internal = require("./m_chat_internal");
@@ -565,6 +566,7 @@ function initModels(sequelize) {
   var m_asm = _m_asm(sequelize, DataTypes);
   var m_gl = _m_gl(sequelize, DataTypes);
   var m_mgr = _m_mgr(sequelize, DataTypes);
+  var m_sales = _m_sales(sequelize, DataTypes);
   var m_chat = _m_chat(sequelize, DataTypes);
   var m_chat_email = _m_chat_email(sequelize, DataTypes);
   var m_chat_internal = _m_chat_internal(sequelize, DataTypes);
@@ -976,6 +978,7 @@ function initModels(sequelize) {
     m_asm,
     m_gl,
     m_mgr,
+    m_sales,
     m_chat,
     m_chat_email,
     m_chat_internal,
