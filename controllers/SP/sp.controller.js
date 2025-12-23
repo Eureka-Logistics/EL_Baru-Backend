@@ -10465,8 +10465,8 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                         )
                         return {
                             idmpd: i.id_mpd,
-                            pickupId: getPickup.id,
-                            pickup: getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
+                            pickupId: getPickup == null ? "" : getPickup.id,
+                            pickup: getPickup == null ? "-" : getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
                             idKendaraan: getKendaraan == null ? "" : getKendaraan.id,
                             nopol: getKendaraan == null ? "" : getKendaraan.no_polisi,
                             driver: getDriver == null ? "" : getDriver.nama,
@@ -11054,8 +11054,8 @@ exports.getSpListAllDetail = async (req, res) => {
                         )
                         return {
                             idmpd: i.id_mpd,
-                            pickupId: getPickup.id,
-                            pickup: getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
+                            pickupId: getPickup == null ? "" : getPickup.id,
+                            pickup: getPickup == null ? "-" : getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
                             idKendaraan: getKendaraan == null ? "" : getKendaraan.id,
                             nopol: getKendaraan == null ? "" : getKendaraan.no_polisi,
                             driver: getDriver == null ? "" : getDriver.nama,
@@ -11140,7 +11140,7 @@ exports.getSpListAllDetail = async (req, res) => {
                                     nopol1: getSJ?.pickup_nopol || "-",
                                     nopol2: getSJ?.nopol || "-",
                                     nopol3: getSJ?.nopol_2 || "-",
-                                    kendaraanJenisId: getKendaraanJenis.id_kendaraan_jenis,
+                                    kendaraanJenisId: getKendaraanJenis == null ? "" : getKendaraanJenis.id_kendaraan_jenis,
                                     kendaraan: ii.kendaraan,
                                     service: getService,
                                     pickupId: getPickup?.id,
@@ -11149,7 +11149,7 @@ exports.getSpListAllDetail = async (req, res) => {
                                     destination: getBongkar?.alamat,
                                     via: ii.via,
                                     shipmentID: ii.shipment,
-                                    shipmentName: getShipment.shipment,
+                                    shipmentName: getShipment == null ? "-" : getShipment.shipment,
                                     id_kota_muat: ii?.id_kota_muat,
                                     id_kota_bongkar: ii?.id_kota_bongkar,
                                     item: ii.nama_barang,

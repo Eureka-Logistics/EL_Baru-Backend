@@ -6,35 +6,41 @@ const { Op, QueryTypes  } = require('sequelize');
 
 function buildReturHistoryText(payload) {
   const { action, no_retur, id_msm_retur, header = {}, detail = [] } = payload || {};
-  const headerKeys = [
-    'id_msm', 'id_customer', 'id_mitra', 'id_unit', 'id_driver',
-    'date_retur', 'kategori', 'keterangan', 'foto', 'penerima',
-    'alasan', 'id_pool', 'id_admin', 'pihak_dibebankan'
-  ];
-  const headerText = headerKeys
-    .filter((k) => typeof header[k] !== 'undefined' && header[k] !== null && header[k] !== '')
-    .map((k) => `${k}=${header[k]}`)
-    .join(', ');
-
-  const detailText = Array.isArray(detail) && detail.length > 0
-    ? detail.map((d, i) => {
-        const parts = [];
-        if (typeof d.nama_barang !== 'undefined') parts.push(`${d.nama_barang}`);
-        const attrs = [];
-        if (typeof d.berat !== 'undefined') attrs.push(`berat ${d.berat}`);
-        if (typeof d.qty !== 'undefined') attrs.push(`qty ${d.qty}`);
-        if (typeof d.koli !== 'undefined') attrs.push(`koli ${d.koli}`);
-        if (typeof d.nilai_barang !== 'undefined') attrs.push(`nilai ${d.nilai_barang}`);
-        return `[${i + 1}] ${parts.join(' ')} (${attrs.join(', ')})`;
-      }).join('; ')
-    : '-';
-
-  const headParts = [];
-  if (action) headParts.push(`Aksi=${action}`);
-  if (no_retur) headParts.push(`NoRetur=${no_retur}`);
-  if (id_msm_retur) headParts.push(`ID=${id_msm_retur}`);
-
-  return `${headParts.join(' | ')} | Header: ${headerText} | Detail: ${detailText}`;
+  
+  // Build main action message
+  const parts = [];
+  
+  if (action === 'CREATE_RETUR') {
+    parts.push(`Retur baru dibuat`);
+  } else if (action === 'UPDATE_RETUR') {
+    parts.push(`Retur diperbarui`);
+  } else if (action) {
+    parts.push(`Aksi: ${action}`);
+  }
+  
+  if (no_retur) {
+    parts.push(`No: ${no_retur}`);
+  }
+  
+  // Add key header information
+  const importantInfo = [];
+  if (header.id_msm) importantInfo.push(`MSM: ${header.id_msm}`);
+  if (header.kategori) importantInfo.push(`Kategori: ${header.kategori}`);
+  if (header.pihak_dibebankan) importantInfo.push(`Dibebankan: ${header.pihak_dibebankan}`);
+  if (header.keterangan) importantInfo.push(`Ket: ${header.keterangan}`);
+  
+  if (importantInfo.length > 0) {
+    parts.push(`(${importantInfo.join(', ')})`);
+  }
+  
+  // Add detail summary
+  if (Array.isArray(detail) && detail.length > 0) {
+    const detailCount = detail.length;
+    const totalNilai = detail.reduce((sum, d) => sum + (Number(d.nilai_barang) || 0), 0);
+    parts.push(`- ${detailCount} item, Total nilai: ${totalNilai}`);
+  }
+  
+  return parts.join(' ');
 }
 
 // Get history chat/nominal for retur
