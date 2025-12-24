@@ -2594,6 +2594,26 @@ exports.createDetailSp = async (req, res) => {
             }
         )
         if (getUser) {
+            // Ambil kota_muat dan kota_bongkar dari tabel alamat
+            let kotaMuat = null;
+            let kotaBongkar = null;
+            
+            if (req.body.id_almuat) {
+                const alamatMuat = await models.alamat.findOne({
+                    where: { id: req.body.id_almuat },
+                    attributes: ['kota']
+                });
+                kotaMuat = alamatMuat ? alamatMuat.kota : null;
+            }
+            
+            if (req.body.id_albongkar) {
+                const alamatBongkar = await models.alamat.findOne({
+                    where: { id: req.body.id_albongkar },
+                    attributes: ['kota']
+                });
+                kotaBongkar = alamatBongkar ? alamatBongkar.kota : null;
+            }
+            
             const createDetail = await models.m_pengadaan_detail.create(
                 {
                     'id_mp': req.body.idMp,
@@ -2611,8 +2631,8 @@ exports.createDetailSp = async (req, res) => {
                     'id_albongkar': req.body.id_albongkar,
                     'id_kota_muat': req.body.id_kota_muat,
                     'id_kota_bongkar': req.body.id_kota_bongkar,
-                    'kota_muat': req.body.kota_muat || null,
-                    'kota_bongkar': req.body.kota_bongkar || null,
+                    'kota_muat': kotaMuat,
+                    'kota_bongkar': kotaBongkar,
                     'nama_barang': req.body.nama_barang,
                     'tgl_dropoff': core.moment(Date.now()).format('YYYY-MM-DD'),
                     'waktu_dropoff': "0000:00:00",
@@ -3025,6 +3045,26 @@ exports.createDetailSp_vico = async (req, res) => {
             // Hitung total: totalProduk + semua biaya - diskonNilai + pajak
             const total = baseAmount + pajak
             
+            // Ambil kota_muat dan kota_bongkar dari tabel alamat
+            let kotaMuat = null;
+            let kotaBongkar = null;
+            
+            if (req.body.id_almuat) {
+                const alamatMuat = await models.alamat.findOne({
+                    where: { id: req.body.id_almuat },
+                    attributes: ['kota']
+                });
+                kotaMuat = alamatMuat ? alamatMuat.kota : null;
+            }
+            
+            if (req.body.id_albongkar) {
+                const alamatBongkar = await models.alamat.findOne({
+                    where: { id: req.body.id_albongkar },
+                    attributes: ['kota']
+                });
+                kotaBongkar = alamatBongkar ? alamatBongkar.kota : null;
+            }
+            
             const createDetail = await models.m_pengadaan_detail.create(
                 {
                     'id_mp': req.body.idMp,
@@ -3042,8 +3082,8 @@ exports.createDetailSp_vico = async (req, res) => {
                     'id_albongkar': req.body.id_albongkar,
                     'id_kota_muat': req.body.id_kota_muat,
                     'id_kota_bongkar': req.body.id_kota_bongkar,
-                    'kota_muat': req.body.kota_muat || null,
-                    'kota_bongkar': req.body.kota_bongkar || null,
+                    'kota_muat': kotaMuat,
+                    'kota_bongkar': kotaBongkar,
                     'nama_barang': req.body.nama_barang,
                     'tgl_dropoff': core.moment(Date.now()).format('YYYY-MM-DD'),
                     'waktu_dropoff': "0000:00:00",
@@ -4979,6 +5019,26 @@ exports.editSpDetail_vico = async (req, res) => {
             // Hitung total: totalProduk + semua biaya - diskonNilai + pajak
             const total = baseAmount + pajak
             
+            // Ambil kota_muat dan kota_bongkar dari tabel alamat
+            let kotaMuat = null;
+            let kotaBongkar = null;
+            
+            if (req.body.id_almuat) {
+                const alamatMuat = await models.alamat.findOne({
+                    where: { id: req.body.id_almuat },
+                    attributes: ['kota']
+                });
+                kotaMuat = alamatMuat ? alamatMuat.kota : null;
+            }
+            
+            if (req.body.id_albongkar) {
+                const alamatBongkar = await models.alamat.findOne({
+                    where: { id: req.body.id_albongkar },
+                    attributes: ['kota']
+                });
+                kotaBongkar = alamatBongkar ? alamatBongkar.kota : null;
+            }
+            
             // Buat object update data
             const updateData = {
                     // ph: req.body.ph,
@@ -4989,8 +5049,8 @@ exports.editSpDetail_vico = async (req, res) => {
                     id_albongkar: req.body.id_albongkar,
                     id_kota_muat: req.body.id_kota_muat,
                     id_kota_bongkar: req.body.id_kota_bongkar,
-                    kota_muat: req.body.kota_muat || null,
-                    kota_bongkar: req.body.kota_bongkar || null,
+                    kota_muat: kotaMuat,
+                    kota_bongkar: kotaBongkar,
                     nama_barang: req.body.nama_barang,
                     berat: req.body.berat,
                     qty: req.body.qty,
@@ -5159,6 +5219,26 @@ exports.editSpDetail = async (req, res) => {
             }
         )
         if (getUser) {
+            // Ambil kota_muat dan kota_bongkar dari tabel alamat
+            let kotaMuat = null;
+            let kotaBongkar = null;
+            
+            if (req.body.id_almuat) {
+                const alamatMuat = await models.alamat.findOne({
+                    where: { id: req.body.id_almuat },
+                    attributes: ['kota']
+                });
+                kotaMuat = alamatMuat ? alamatMuat.kota : null;
+            }
+            
+            if (req.body.id_albongkar) {
+                const alamatBongkar = await models.alamat.findOne({
+                    where: { id: req.body.id_albongkar },
+                    attributes: ['kota']
+                });
+                kotaBongkar = alamatBongkar ? alamatBongkar.kota : null;
+            }
+            
             const updData = await models.m_pengadaan_detail.update(
                 {
                     // ph: req.body.ph,
@@ -5169,8 +5249,8 @@ exports.editSpDetail = async (req, res) => {
                     id_albongkar: req.body.id_albongkar,
                     id_kota_muat: req.body.id_kota_muat,
                     id_kota_bongkar: req.body.id_kota_bongkar,
-                    kota_muat: req.body.kota_muat || null,
-                    kota_bongkar: req.body.kota_bongkar || null,
+                    kota_muat: kotaMuat,
+                    kota_bongkar: kotaBongkar,
                     nama_barang: req.body.nama_barang,
                     berat: req.body.berat,
                     qty: req.body.qty,
