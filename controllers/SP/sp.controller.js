@@ -10705,6 +10705,12 @@ exports.getSpListAllDetail = async (req, res) => {
         // models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_price_customer', foreignKey: 'id_price_customer' });
         // models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_muat_kota', foreignKey: 'id_tujuan_kota' });
 
+        if (!models.users.associations.brench) {
+            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
+        }
+        if (!models.alamat.associations.m_wil_provinsi) {
+            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
+        }
         if (!models.m_tarif_customer.associations.kotaAsal) {
             models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
         }
