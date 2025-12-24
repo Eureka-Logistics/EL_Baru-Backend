@@ -10006,7 +10006,13 @@ exports.getSpListAllDetail_vico = async (req, res) => {
         models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
         // models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
         models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
+        if (!models.users.associations.brench) {
+            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
+        }
         models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
+        if (!models.alamat.associations.m_wil_provinsi) {
+            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
+        }
         models.m_pengadaan_detail.belongsTo(models.kendaraan_jenis, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
         models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_tarif_customer', foreignKey: 'id_price_customer' });
 
@@ -10071,7 +10077,15 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                                         ]
                                     },
                                     {
-                                        model: models.users
+                                        model: models.users,
+                                        include: [
+                                            {
+                                                model: models.m_bu_brench,
+                                                as: 'brench',
+                                                attributes: ['wilayah'],
+                                                required: false
+                                            }
+                                        ]
                                     },
                                     // {
                                     //     model: models.m_bu_employee,
@@ -10162,7 +10176,15 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                     },
                     include: [
                         {
-                            model: models.users
+                            model: models.users,
+                            include: [
+                                {
+                                    model: models.m_bu_brench,
+                                    as: 'brench',
+                                    attributes: ['wilayah'],
+                                    required: false
+                                }
+                            ]
                         },
 
                         // {
@@ -10258,6 +10280,7 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                 const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
 
                 const marketing = getPengadaan.map((i) => i.user.nama_lengkap == null ? "-" : i.user.nama_lengkap)
+                const branch = getPengadaan.map((i) => i.user?.brench?.wilayah || "-")
                 const getService = getPengadaan.map((i) => i.service)
                 const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
                 const customer = (getCustomer.map((i) => i.nama_perusahaan) != '' ? getCustomer.map((i) => i.nama_perusahaan) : getDetail.map((i) => i.m_pengadaan.customer.nama_perusahaan));
@@ -10382,6 +10405,7 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                     spk: noSpk[0],
                     sp: noSp[0],
                     marketing: marketing[0],
+                    branch: branch[0],
                     service: service[0],
                     order_date: orderDate[0],
                     pickup_date: pickupDate[0],
@@ -10436,7 +10460,14 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                             {
                                 where: {
                                     id: i.id_almuat
-                                }
+                                },
+                                include: [
+                                    {
+                                        model: models.m_wil_provinsi,
+                                        attributes: ['nama_provinsi'],
+                                        required: false
+                                    }
+                                ]
                             }
                         );
 
@@ -10477,7 +10508,14 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                                     {
                                         where: {
                                             id: ii.id_albongkar
-                                        }
+                                        },
+                                        include: [
+                                            {
+                                                model: models.m_wil_provinsi,
+                                                attributes: ['nama_provinsi'],
+                                                required: false
+                                            }
+                                        ]
                                     }
                                 );
 
@@ -10558,6 +10596,13 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                                     pickup: getPickup?.alamat,
                                     destinationId: getBongkar?.id,
                                     destination: getBongkar?.alamat,
+                                    cp_penerima_nama: getBongkar?.pic || "-",
+                                    cp_pengirim_nama: getPickup?.pic || "-",
+                                    kota_penerima: getBongkar?.kota || "-",
+                                    kota_pengirim: getPickup?.kota || "-",
+                                    nama_pengirim: getPickup?.pic || "-",
+                                    provinsi_penerima: getBongkar?.m_wil_provinsi?.nama_provinsi || "-",
+                                    provinsi_pengirim: getPickup?.m_wil_provinsi?.nama_provinsi || "-",
                                     via: ii.via,
                                     shipmentID: ii.shipment,
                                     shipmentName: getShipment.shipment,
@@ -10718,7 +10763,15 @@ exports.getSpListAllDetail = async (req, res) => {
                                         ]
                                     },
                                     {
-                                        model: models.users
+                                        model: models.users,
+                                        include: [
+                                            {
+                                                model: models.m_bu_brench,
+                                                as: 'brench',
+                                                attributes: ['wilayah'],
+                                                required: false
+                                            }
+                                        ]
                                     },
                                     // {
                                     //     model: models.m_bu_employee,
@@ -10809,7 +10862,15 @@ exports.getSpListAllDetail = async (req, res) => {
                     },
                     include: [
                         {
-                            model: models.users
+                            model: models.users,
+                            include: [
+                                {
+                                    model: models.m_bu_brench,
+                                    as: 'brench',
+                                    attributes: ['wilayah'],
+                                    required: false
+                                }
+                            ]
                         },
 
                         // {
@@ -11025,7 +11086,14 @@ exports.getSpListAllDetail = async (req, res) => {
                             {
                                 where: {
                                     id: i.id_almuat
-                                }
+                                },
+                                include: [
+                                    {
+                                        model: models.m_wil_provinsi,
+                                        attributes: ['nama_provinsi'],
+                                        required: false
+                                    }
+                                ]
                             }
                         );
 
@@ -11066,7 +11134,14 @@ exports.getSpListAllDetail = async (req, res) => {
                                     {
                                         where: {
                                             id: ii.id_albongkar
-                                        }
+                                        },
+                                        include: [
+                                            {
+                                                model: models.m_wil_provinsi,
+                                                attributes: ['nama_provinsi'],
+                                                required: false
+                                            }
+                                        ]
                                     }
                                 );
 
