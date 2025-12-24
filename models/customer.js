@@ -349,6 +349,15 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 0
+    },
+    id_odoo: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    id_bu: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 11
     }
   }, {
     sequelize,

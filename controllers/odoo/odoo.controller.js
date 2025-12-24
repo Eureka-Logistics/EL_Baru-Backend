@@ -41,8 +41,8 @@ exports.createFromOdoo = async (req, res) => {
 
         for (const item of dataArray) {
             try {
-                // Get ID dari Odoo (bisa dari id atau company_id jika ada)
-                const idOdoo = item.id || item.company_id;
+                // Get ID dari Odoo (bisa dari id, id_odoo, atau company_id jika ada)
+                const idOdoo = item.id || item.id_odoo || item.company_id;
                 const isPelanggan = item.is_pelanggan === 1 || item.is_pelanggan === true || item.is_pelanggan === '1';
                 const isVendor = item.is_vendor === 1 || item.is_vendor === true || item.is_vendor === '1';
                 const isUpdate = item.is_update === 1 || item.is_update === true || item.is_update === '1';
@@ -50,7 +50,17 @@ exports.createFromOdoo = async (req, res) => {
                 if (!idOdoo) {
                     results.errors.push({
                         data: item,
-                        error: 'id atau company_id tidak ditemukan'
+                        error: 'id, id_odoo, atau company_id tidak ditemukan'
+                    });
+                    continue;
+                }
+
+                // Pastikan idOdoo adalah integer
+                const idOdooInt = parseInt(idOdoo, 10);
+                if (isNaN(idOdooInt)) {
+                    results.errors.push({
+                        data: item,
+                        error: 'id_odoo harus berupa angka'
                     });
                     continue;
                 }
@@ -59,13 +69,13 @@ exports.createFromOdoo = async (req, res) => {
                 if (isPelanggan) {
                     const existingCustomer = await models.customer.findOne({
                         where: {
-                            id_odoo: idOdoo
+                            id_odoo: idOdooInt
                         }
                     });
 
                     // Mapping field dari Odoo ke database
                     const customerData = {
-                        id_odoo: idOdoo,
+                        id_odoo: idOdooInt,
                         parent_id: 0,
                         id_sales: 1, // Default sales, bisa disesuaikan
                         akun: val(item.akun, ''),
@@ -157,14 +167,14 @@ exports.createFromOdoo = async (req, res) => {
                         if (existingCustomer) {
                             await models.customer.update(customerData, {
                                 where: {
-                                    id_odoo: idOdoo
+                                    id_odoo: idOdooInt
                                 }
                             });
                         } else {
                             // Jika is_update tapi data belum ada, tetap insert
                             const newCustomer = await models.customer.create(customerData);
                             results.inserted.push({
-                                id_odoo: idOdoo,
+                                id_odoo: idOdooInt,
                                 type: 'customer',
                                 id_customer: newCustomer.id_customer,
                                 nama_perusahaan: customerData.nama_perusahaan
@@ -172,7 +182,7 @@ exports.createFromOdoo = async (req, res) => {
                             continue;
                         }
                         results.updated.push({
-                            id_odoo: idOdoo,
+                            id_odoo: idOdooInt,
                             type: 'customer',
                             nama_perusahaan: customerData.nama_perusahaan
                         });
@@ -180,7 +190,7 @@ exports.createFromOdoo = async (req, res) => {
                         // Insert new customer
                         const newCustomer = await models.customer.create(customerData);
                         results.inserted.push({
-                            id_odoo: idOdoo,
+                            id_odoo: idOdooInt,
                             type: 'customer',
                             id_customer: newCustomer.id_customer,
                             nama_perusahaan: customerData.nama_perusahaan
@@ -192,7 +202,7 @@ exports.createFromOdoo = async (req, res) => {
                 if (isVendor) {
                     const existingMitra = await models.mitra.findOne({
                         where: {
-                            id_odoo: idOdoo
+                            id_odoo: idOdooInt
                         }
                     });
 
@@ -205,7 +215,7 @@ exports.createFromOdoo = async (req, res) => {
 
                     // Mapping field dari Odoo ke database
                     const mitraData = {
-                        id_odoo: idOdoo,
+                        id_odoo: idOdooInt,
                         kode_mitra: val(item.code || item.kode_mitra, null),
                         kode: val(item.code || item.kode, null),
                         qrcode: val(item.qrcode, ''),
@@ -323,14 +333,14 @@ exports.createFromOdoo = async (req, res) => {
                         if (existingMitra) {
                             await models.mitra.update(mitraData, {
                                 where: {
-                                    id_odoo: idOdoo
+                                    id_odoo: idOdooInt
                                 }
                             });
                         } else {
                             // Jika is_update tapi data belum ada, tetap insert
                             const newMitra = await models.mitra.create(mitraData);
                             results.inserted.push({
-                                id_odoo: idOdoo,
+                                id_odoo: idOdooInt,
                                 type: 'mitra',
                                 id_mitra: newMitra.id_mitra,
                                 nama_mitra: mitraData.nama_mitra
@@ -338,7 +348,7 @@ exports.createFromOdoo = async (req, res) => {
                             continue;
                         }
                         results.updated.push({
-                            id_odoo: idOdoo,
+                            id_odoo: idOdooInt,
                             type: 'mitra',
                             nama_mitra: mitraData.nama_mitra
                         });
@@ -346,7 +356,7 @@ exports.createFromOdoo = async (req, res) => {
                         // Insert new mitra
                         const newMitra = await models.mitra.create(mitraData);
                         results.inserted.push({
-                            id_odoo: idOdoo,
+                            id_odoo: idOdooInt,
                             type: 'mitra',
                             id_mitra: newMitra.id_mitra,
                             nama_mitra: mitraData.nama_mitra

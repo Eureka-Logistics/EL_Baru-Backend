@@ -457,6 +457,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: 0
+    },
+    id_odoo: {
+      type: DataTypes.INTEGER,
+      allowNull: true
     }
   }, {
     sequelize,
