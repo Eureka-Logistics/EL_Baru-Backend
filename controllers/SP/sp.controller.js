@@ -5737,17 +5737,25 @@ exports.getSp = async (req, res) => {
                 const startIndex = (currentPage - 1) * itemsPerPage + 1;
                 const result = await Promise.all(getData.map(async (item, index) => {
                     const details = Array.isArray(item.m_pengadaan_details) ? item.m_pengadaan_details : [];
-                    const bongkar = details.map((i) => i.id_albongkar).filter(Boolean);
-                    const muat = details.map((i) => i.id_almuat).filter(Boolean);
                     const vehicle = details.map((i) => i.kendaraan).filter(Boolean);
-
-
-
-
-                    const lastBongkarId = bongkar.length > 0 ? bongkar[bongkar.length - 1] : null;
-                    const firstMuatId = muat.length > 0 ? muat[0] : null;
-                    const getBongkar = lastBongkarId ? await models.alamat.findOne({ where: { id: lastBongkarId } }) : null;
-                    const getMuat = firstMuatId ? await models.alamat.findOne({ where: { id: firstMuatId } }) : null;
+                    
+                    // Ambil kota_muat dan kota_bongkar langsung dari m_pengadaan_detail
+                    let kotaMuat = null;
+                    let kotaBongkar = null;
+                    
+                    for (const det of details) {
+                        if (!det) continue;
+                        
+                        // Ambil kota_muat dari detail pertama
+                        if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined) {
+                            kotaMuat = det.kota_muat;
+                        }
+                        
+                        // Ambil kota_bongkar dari detail terakhir
+                        if (det.kota_bongkar !== null && det.kota_bongkar !== undefined) {
+                            kotaBongkar = det.kota_bongkar;
+                        }
+                    }
 
                     return {
                         no: startIndex + index,
@@ -5767,7 +5775,7 @@ exports.getSp = async (req, res) => {
                         dateApproveOps: core.moment(item.m_status_order.tgl_act_4).format('YYYY-MM-DD HH:mm:ss'),
                         approvePurch: item.m_status_order.kendaraan_purchasing,
                         dateApprovePurch: core.moment(item.m_status_order.tgl_act_5).format('YYYY-MM-DD HH:mm:ss'),
-                        destination: (getMuat == null ? "kota muat belom diinput" : getMuat?.kota) + " - " + (getBongkar == null ? "kota bongkar belom diinput" : getBongkar?.kota)
+                        destination: (kotaMuat == null || kotaMuat == "" ? "kota muat belom diinput" : kotaMuat) + " - " + (kotaBongkar == null || kotaBongkar == "" ? "kota bongkar belom diinput" : kotaBongkar)
                         // chat: item.m_chat
                         // idMuat: item.m_pengadaan_detail.id_almuat,
                         // idBongkar: item.m_pengadaan_detail.id_albongkar,
