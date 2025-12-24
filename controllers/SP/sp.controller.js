@@ -2611,6 +2611,8 @@ exports.createDetailSp = async (req, res) => {
                     'id_albongkar': req.body.id_albongkar,
                     'id_kota_muat': req.body.id_kota_muat,
                     'id_kota_bongkar': req.body.id_kota_bongkar,
+                    'kota_muat': req.body.kota_muat || null,
+                    'kota_bongkar': req.body.kota_bongkar || null,
                     'nama_barang': req.body.nama_barang,
                     'tgl_dropoff': core.moment(Date.now()).format('YYYY-MM-DD'),
                     'waktu_dropoff': "0000:00:00",
@@ -3040,6 +3042,8 @@ exports.createDetailSp_vico = async (req, res) => {
                     'id_albongkar': req.body.id_albongkar,
                     'id_kota_muat': req.body.id_kota_muat,
                     'id_kota_bongkar': req.body.id_kota_bongkar,
+                    'kota_muat': req.body.kota_muat || null,
+                    'kota_bongkar': req.body.kota_bongkar || null,
                     'nama_barang': req.body.nama_barang,
                     'tgl_dropoff': core.moment(Date.now()).format('YYYY-MM-DD'),
                     'waktu_dropoff': "0000:00:00",
@@ -4985,6 +4989,8 @@ exports.editSpDetail_vico = async (req, res) => {
                     id_albongkar: req.body.id_albongkar,
                     id_kota_muat: req.body.id_kota_muat,
                     id_kota_bongkar: req.body.id_kota_bongkar,
+                    kota_muat: req.body.kota_muat || null,
+                    kota_bongkar: req.body.kota_bongkar || null,
                     nama_barang: req.body.nama_barang,
                     berat: req.body.berat,
                     qty: req.body.qty,
@@ -5163,6 +5169,8 @@ exports.editSpDetail = async (req, res) => {
                     id_albongkar: req.body.id_albongkar,
                     id_kota_muat: req.body.id_kota_muat,
                     id_kota_bongkar: req.body.id_kota_bongkar,
+                    kota_muat: req.body.kota_muat || null,
+                    kota_bongkar: req.body.kota_bongkar || null,
                     nama_barang: req.body.nama_barang,
                     berat: req.body.berat,
                     qty: req.body.qty,
@@ -9772,25 +9780,24 @@ exports.getSpListAll2 = async (req, res) => {
         for (let index = 0; index < rows.length; index++) {
             const item = rows[index] || {};
             const details = Array.isArray(item.m_pengadaan_details) ? item.m_pengadaan_details : [];
-            const bongkar = [];
-            const muat = [];
             const kendaraan = [];
+            let kotaMuat = null;
+            let kotaBongkar = null;
+            
             for (const det of details) {
                 if (!det) continue;
-                if (det.id_albongkar !== null && det.id_albongkar !== undefined) bongkar.push(det.id_albongkar);
-                if (det.id_almuat !== null && det.id_almuat !== undefined) muat.push(det.id_almuat);
                 if (det.kendaraan !== null && det.kendaraan !== undefined) kendaraan.push(det.kendaraan);
+                
+                // Ambil kota_muat dari detail pertama
+                if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined) {
+                    kotaMuat = det.kota_muat;
+                }
+                
+                // Ambil kota_bongkar dari detail terakhir
+                if (det.kota_bongkar !== null && det.kota_bongkar !== undefined) {
+                    kotaBongkar = det.kota_bongkar;
+                }
             }
-
-            const lastBongkarId = bongkar.length > 0 ? bongkar[bongkar.length - 1] : null;
-            const firstMuatId = muat.length > 0 ? muat[0] : null;
-
-            const getBongkar = lastBongkarId
-                ? await models.alamat.findOne({ where: { id: lastBongkarId } })
-                : null;
-            const getMuat = firstMuatId
-                ? await models.alamat.findOne({ where: { id: firstMuatId } })
-                : null;
 
             result.push({
                 no: startIndex + index,
@@ -9817,7 +9824,7 @@ exports.getSpListAll2 = async (req, res) => {
                 approvePurch: item.m_status_order?.kendaraan_purchasing,
                 dateApprovePurch: core.moment(item.m_status_order?.tgl_act_5).format('YYYY-MM-DD HH:mm:ss') == "1970-01-01 07:00:00" ? "Invalid Date" : core.moment(item.m_status_order?.tgl_act_5).format('YYYY-MM-DD HH:mm:ss'),
                 new: item.new,
-                destination: (getMuat == null ? "kota muat belum diinput" : getMuat.kota == null ? "-" : getMuat.kota) + " " + (getBongkar == null ? "kota bongkar belum diinput" : getBongkar.kota == null ? "-" : getBongkar.kota)
+                destination: (kotaMuat == null || kotaMuat == "" ? "kota muat belum diinput" : kotaMuat) + " " + (kotaBongkar == null || kotaBongkar == "" ? "kota bongkar belum diinput" : kotaBongkar)
             });
         }
 
