@@ -5518,6 +5518,7 @@ exports.getSp = async (req, res) => {
                                 status: { [Op.ne]: 0 }
                             },
                             required: false,
+                            attributes: { exclude: [] }, // Include all attributes including kota_muat and kota_bongkar
                             include: [
                                 {
                                     model: models.m_sm
@@ -5745,25 +5746,60 @@ exports.getSp = async (req, res) => {
                     let idAlmuat = null;
                     let idAlbongkar = null;
                     
-                    for (const det of details) {
-                        if (!det) continue;
-                        
-                        // Ambil kota_muat dari detail pertama
-                        if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
-                            kotaMuat = det.kota_muat;
+                    // Jika detail kosong, coba load detail langsung dari database
+                    if (details.length === 0 && item.id_mp) {
+                        const loadedDetails = await models.m_pengadaan_detail.findAll({
+                            where: {
+                                id_mp: item.id_mp,
+                                status: { [Op.ne]: 0 }
+                            },
+                            attributes: ['id_mpd', 'id_mp', 'kota_muat', 'kota_bongkar', 'id_almuat', 'id_albongkar', 'kendaraan']
+                        });
+                        if (loadedDetails && loadedDetails.length > 0) {
+                            for (const det of loadedDetails) {
+                                if (!det) continue;
+                                
+                                // Ambil kota_muat dari detail pertama
+                                if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
+                                    kotaMuat = det.kota_muat;
+                                }
+                                
+                                // Ambil kota_bongkar dari detail terakhir
+                                if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
+                                    kotaBongkar = det.kota_bongkar;
+                                }
+                                
+                                // Simpan id_almuat dan id_albongkar untuk fallback
+                                if (idAlmuat === null && det.id_almuat) {
+                                    idAlmuat = det.id_almuat;
+                                }
+                                if (det.id_albongkar) {
+                                    idAlbongkar = det.id_albongkar;
+                                }
+                            }
                         }
-                        
-                        // Ambil kota_bongkar dari detail terakhir
-                        if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
-                            kotaBongkar = det.kota_bongkar;
-                        }
-                        
-                        // Simpan id_almuat dan id_albongkar untuk fallback
-                        if (idAlmuat === null && det.id_almuat) {
-                            idAlmuat = det.id_almuat;
-                        }
-                        if (det.id_albongkar) {
-                            idAlbongkar = det.id_albongkar;
+                    } else {
+                        // Loop melalui detail yang sudah ter-load
+                        for (const det of details) {
+                            if (!det) continue;
+                            
+                            // Ambil kota_muat dari detail pertama
+                            if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
+                                kotaMuat = det.kota_muat;
+                            }
+                            
+                            // Ambil kota_bongkar dari detail terakhir
+                            if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
+                                kotaBongkar = det.kota_bongkar;
+                            }
+                            
+                            // Simpan id_almuat dan id_albongkar untuk fallback
+                            if (idAlmuat === null && det.id_almuat) {
+                                idAlmuat = det.id_almuat;
+                            }
+                            if (det.id_albongkar) {
+                                idAlbongkar = det.id_albongkar;
+                            }
                         }
                     }
                     
