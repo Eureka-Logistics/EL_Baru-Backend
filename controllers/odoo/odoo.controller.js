@@ -27,10 +27,8 @@ exports.createFromOdoo = async (req, res) => {
 
         if (dataArray.length === 0) {
             output = {
-                status: {
-                    code: 400,
-                    message: 'Payload kosong atau format tidak valid'
-                }
+                message: 'Payload kosong atau format tidak valid',
+                status: 400
             };
             return res.status(400).send(output);
         }
@@ -373,28 +371,27 @@ exports.createFromOdoo = async (req, res) => {
         }
 
         output = {
-            status: {
-                code: 200,
-                message: 'Success process data from Odoo'
-            },
-            results: results
+            message: 'success',
+            status: 200,
+            response: results
         };
 
     } catch (error) {
         output = {
-            status: {
-                code: 500,
-                message: error.message
-            }
+            message: error.message || 'Internal server error',
+            status: 500
         };
     }
 
     const errorsFromMiddleware = await customErrorMiddleware(req);
 
     if (!errorsFromMiddleware) {
-        res.status(output.status.code).send(output);
+        res.status(output.status).send(output);
     } else {
-        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+        res.status(errorsFromMiddleware.status.code).send({
+            message: errorsFromMiddleware.status.message || 'Error',
+            status: errorsFromMiddleware.status.code
+        });
     }
 };
 

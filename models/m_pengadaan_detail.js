@@ -75,6 +75,16 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: true,
       defaultValue: 0
     },
+    kota_muat: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: null
+    },
+    kota_bongkar: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: null
+    },
     nama_barang: {
       type: DataTypes.STRING(100),
       allowNull: false,
