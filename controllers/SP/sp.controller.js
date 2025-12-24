@@ -5742,19 +5742,46 @@ exports.getSp = async (req, res) => {
                     // Ambil kota_muat dan kota_bongkar langsung dari m_pengadaan_detail
                     let kotaMuat = null;
                     let kotaBongkar = null;
+                    let idAlmuat = null;
+                    let idAlbongkar = null;
                     
                     for (const det of details) {
                         if (!det) continue;
                         
                         // Ambil kota_muat dari detail pertama
-                        if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined) {
+                        if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
                             kotaMuat = det.kota_muat;
                         }
                         
                         // Ambil kota_bongkar dari detail terakhir
-                        if (det.kota_bongkar !== null && det.kota_bongkar !== undefined) {
+                        if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
                             kotaBongkar = det.kota_bongkar;
                         }
+                        
+                        // Simpan id_almuat dan id_albongkar untuk fallback
+                        if (idAlmuat === null && det.id_almuat) {
+                            idAlmuat = det.id_almuat;
+                        }
+                        if (det.id_albongkar) {
+                            idAlbongkar = det.id_albongkar;
+                        }
+                    }
+                    
+                    // Fallback: jika kota_muat atau kota_bongkar masih null, ambil dari tabel alamat
+                    if ((kotaMuat === null || kotaMuat === "") && idAlmuat) {
+                        const alamatMuat = await models.alamat.findOne({ 
+                            where: { id: idAlmuat },
+                            attributes: ['kota']
+                        });
+                        kotaMuat = alamatMuat ? alamatMuat.kota : null;
+                    }
+                    
+                    if ((kotaBongkar === null || kotaBongkar === "") && idAlbongkar) {
+                        const alamatBongkar = await models.alamat.findOne({ 
+                            where: { id: idAlbongkar },
+                            attributes: ['kota']
+                        });
+                        kotaBongkar = alamatBongkar ? alamatBongkar.kota : null;
                     }
 
                     return {
