@@ -5514,9 +5514,6 @@ exports.getSp = async (req, res) => {
                     include: [
                         {
                             model: models.m_pengadaan_detail,
-                            where: {
-                                status: { [Op.ne]: 0 }
-                            },
                             required: false,
                             attributes: { exclude: [] }, // Include all attributes including kota_muat and kota_bongkar
                             include: [
@@ -5737,7 +5734,24 @@ exports.getSp = async (req, res) => {
                 const itemsPerPage = Number(req.query.limit) || 10; // Jumlah item per halaman
                 const startIndex = (currentPage - 1) * itemsPerPage + 1;
                 const result = await Promise.all(getData.map(async (item, index) => {
-                    const details = Array.isArray(item.m_pengadaan_details) ? item.m_pengadaan_details : [];
+                    // Coba gunakan detail dari include terlebih dahulu
+                    const detailsFromInclude = Array.isArray(item.m_pengadaan_details) ? item.m_pengadaan_details : [];
+                    
+                    // Load detail langsung dari database untuk memastikan data ter-load dengan benar
+                    let loadedDetails = [];
+                    if (item.id_mp) {
+                        loadedDetails = await models.m_pengadaan_detail.findAll({
+                            where: {
+                                id_mp: item.id_mp
+                            },
+                            attributes: ['id_mpd', 'id_mp', 'kota_muat', 'kota_bongkar', 'id_almuat', 'id_albongkar', 'kendaraan'],
+                            raw: true // Gunakan raw untuk mendapatkan plain object
+                        });
+                    }
+                    
+                    // Gunakan detail dari database jika lebih lengkap, atau gunakan dari include
+                    const details = loadedDetails && loadedDetails.length > 0 ? loadedDetails : detailsFromInclude;
+                    
                     const vehicle = details.map((i) => i.kendaraan).filter(Boolean);
                     
                     // Ambil kota_muat dan kota_bongkar langsung dari m_pengadaan_detail
@@ -5746,60 +5760,28 @@ exports.getSp = async (req, res) => {
                     let idAlmuat = null;
                     let idAlbongkar = null;
                     
-                    // Jika detail kosong, coba load detail langsung dari database
-                    if (details.length === 0 && item.id_mp) {
-                        const loadedDetails = await models.m_pengadaan_detail.findAll({
-                            where: {
-                                id_mp: item.id_mp,
-                                status: { [Op.ne]: 0 }
-                            },
-                            attributes: ['id_mpd', 'id_mp', 'kota_muat', 'kota_bongkar', 'id_almuat', 'id_albongkar', 'kendaraan']
-                        });
-                        if (loadedDetails && loadedDetails.length > 0) {
-                            for (const det of loadedDetails) {
-                                if (!det) continue;
-                                
-                                // Ambil kota_muat dari detail pertama
-                                if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
-                                    kotaMuat = det.kota_muat;
-                                }
-                                
-                                // Ambil kota_bongkar dari detail terakhir
-                                if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
-                                    kotaBongkar = det.kota_bongkar;
-                                }
-                                
-                                // Simpan id_almuat dan id_albongkar untuk fallback
-                                if (idAlmuat === null && det.id_almuat) {
-                                    idAlmuat = det.id_almuat;
-                                }
-                                if (det.id_albongkar) {
-                                    idAlbongkar = det.id_albongkar;
-                                }
-                            }
+                    for (const det of details) {
+                        if (!det) continue;
+                        
+                        // Convert to plain object jika perlu (untuk data dari include)
+                        const detData = det.get ? det.get({ plain: true }) : det;
+                        
+                        // Ambil kota_muat dari detail pertama
+                        if (kotaMuat === null && detData.kota_muat !== null && detData.kota_muat !== undefined && detData.kota_muat !== "") {
+                            kotaMuat = detData.kota_muat;
                         }
-                    } else {
-                        // Loop melalui detail yang sudah ter-load
-                        for (const det of details) {
-                            if (!det) continue;
-                            
-                            // Ambil kota_muat dari detail pertama
-                            if (kotaMuat === null && det.kota_muat !== null && det.kota_muat !== undefined && det.kota_muat !== "") {
-                                kotaMuat = det.kota_muat;
-                            }
-                            
-                            // Ambil kota_bongkar dari detail terakhir
-                            if (det.kota_bongkar !== null && det.kota_bongkar !== undefined && det.kota_bongkar !== "") {
-                                kotaBongkar = det.kota_bongkar;
-                            }
-                            
-                            // Simpan id_almuat dan id_albongkar untuk fallback
-                            if (idAlmuat === null && det.id_almuat) {
-                                idAlmuat = det.id_almuat;
-                            }
-                            if (det.id_albongkar) {
-                                idAlbongkar = det.id_albongkar;
-                            }
+                        
+                        // Ambil kota_bongkar dari detail terakhir (update setiap kali ada nilai)
+                        if (detData.kota_bongkar !== null && detData.kota_bongkar !== undefined && detData.kota_bongkar !== "") {
+                            kotaBongkar = detData.kota_bongkar;
+                        }
+                        
+                        // Simpan id_almuat dan id_albongkar untuk fallback
+                        if (idAlmuat === null && detData.id_almuat) {
+                            idAlmuat = detData.id_almuat;
+                        }
+                        if (detData.id_albongkar) {
+                            idAlbongkar = detData.id_albongkar;
                         }
                     }
                     
