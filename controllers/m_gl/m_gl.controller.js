@@ -14,38 +14,21 @@ exports.createGl = async (req, res) => {
         });
 
         if (getUser) {
-            const { tahun, id_bu, nama_bu, nik_gl, kode_gl, nama_gl, wilayah_gl } = req.body;
+            const { tahun, id_bu, nama_bu, kode_gl, nama_gl, wilayah_gl } = req.body;
 
             // Validasi field wajib
-            if (!tahun || !id_bu || !nama_bu || !nik_gl) {
+            if (!tahun || !id_bu || !nama_bu) {
                 output = {
                     status: {
                         code: 400,
-                        message: 'Field tahun, id_bu, nama_bu, dan nik_gl wajib diisi'
+                        message: 'Field tahun, id_bu, dan nama_bu wajib diisi'
                     }
                 };
             } else {
-                // Cek apakah sudah ada dengan nik_gl yang sama
-                const existingGl = await models.m_gl.findOne({
-                    where: {
-                        nik_gl: nik_gl,
-                        active: 'active'
-                    }
-                });
-
-                if (existingGl) {
-                    output = {
-                        status: {
-                            code: 402,
-                            message: 'GL dengan NIK tersebut sudah ada'
-                        }
-                    };
-                } else {
                     const createData = await models.m_gl.create({
                         tahun: tahun,
                         id_bu: id_bu,
                         nama_bu: nama_bu,
-                        nik_gl: nik_gl,
                         kode_gl: kode_gl || null,
                         nama_gl: nama_gl || null,
                         wilayah_gl: wilayah_gl || null,
@@ -61,7 +44,6 @@ exports.createGl = async (req, res) => {
                             data: createData
                         };
                     }
-                }
             }
         }
     } catch (error) {
@@ -93,7 +75,7 @@ exports.editGl = async (req, res) => {
         });
 
         if (getUser) {
-            const { id_gl, tahun, id_bu, nama_bu, nik_gl, kode_gl, nama_gl, wilayah_gl } = req.body;
+            const { id_gl, tahun, id_bu, nama_bu, kode_gl, nama_gl, wilayah_gl } = req.body;
 
             if (!id_gl) {
                 output = {
@@ -121,7 +103,6 @@ exports.editGl = async (req, res) => {
                     if (tahun !== undefined) updateData.tahun = tahun;
                     if (id_bu !== undefined) updateData.id_bu = id_bu;
                     if (nama_bu !== undefined) updateData.nama_bu = nama_bu;
-                    if (nik_gl !== undefined) updateData.nik_gl = nik_gl;
                     if (kode_gl !== undefined) updateData.kode_gl = kode_gl;
                     if (nama_gl !== undefined) updateData.nama_gl = nama_gl;
                     if (wilayah_gl !== undefined) updateData.wilayah_gl = wilayah_gl;
@@ -273,7 +254,6 @@ exports.getGlByBu = async (req, res) => {
                             tahun: item.tahun,
                             id_bu: item.id_bu,
                             nama_bu: item.nama_bu,
-                            nik_gl: item.nik_gl,
                             kode_gl: item.kode_gl,
                             nama_gl: item.nama_gl,
                             wilayah_gl: item.wilayah_gl,
@@ -361,7 +341,6 @@ exports.getGlById = async (req, res) => {
                             tahun: getData.tahun,
                             id_bu: getData.id_bu,
                             nama_bu: getData.nama_bu,
-                            nik_gl: getData.nik_gl,
                             kode_gl: getData.kode_gl,
                             nama_gl: getData.nama_gl,
                             wilayah_gl: getData.wilayah_gl,

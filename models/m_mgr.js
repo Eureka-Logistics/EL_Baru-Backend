@@ -19,10 +19,6 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(100),
       allowNull: false
     },
-    nik_manager: {
-      type: DataTypes.STRING(30),
-      allowNull: false
-    },
     kode_manager: {
       type: DataTypes.STRING(30),
       allowNull: true

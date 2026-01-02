@@ -14,36 +14,19 @@ exports.createCab = async (req, res) => {
         });
 
         if (getUser) {
-            const { tahun, nik_cabang, kode_cabang, nama_cabang, wilayah_cabang } = req.body;
+            const { tahun, kode_cabang, nama_cabang, wilayah_cabang } = req.body;
 
             // Validasi field wajib
-            if (!tahun || !nik_cabang) {
+            if (!tahun) {
                 output = {
                     status: {
                         code: 400,
-                        message: 'Field tahun dan nik_cabang wajib diisi'
+                        message: 'Field tahun wajib diisi'
                     }
                 };
             } else {
-                // Cek apakah sudah ada dengan nik_cabang yang sama
-                const existingCab = await models.m_cab.findOne({
-                    where: {
-                        nik_cabang: nik_cabang,
-                        active: 'active'
-                    }
-                });
-
-                if (existingCab) {
-                    output = {
-                        status: {
-                            code: 402,
-                            message: 'Cabang dengan NIK tersebut sudah ada'
-                        }
-                    };
-                } else {
                     const createData = await models.m_cab.create({
                         tahun: tahun,
-                        nik_cabang: nik_cabang,
                         kode_cabang: kode_cabang || null,
                         nama_cabang: nama_cabang || null,
                         wilayah_cabang: wilayah_cabang || null,
@@ -59,7 +42,6 @@ exports.createCab = async (req, res) => {
                             data: createData
                         };
                     }
-                }
             }
         }
     } catch (error) {
@@ -91,7 +73,7 @@ exports.editCab = async (req, res) => {
         });
 
         if (getUser) {
-            const { id_cab, tahun, nik_cabang, kode_cabang, nama_cabang, wilayah_cabang } = req.body;
+            const { id_cab, tahun, kode_cabang, nama_cabang, wilayah_cabang } = req.body;
 
             if (!id_cab) {
                 output = {
@@ -117,7 +99,6 @@ exports.editCab = async (req, res) => {
                 } else {
                     const updateData = {};
                     if (tahun !== undefined) updateData.tahun = tahun;
-                    if (nik_cabang !== undefined) updateData.nik_cabang = nik_cabang;
                     if (kode_cabang !== undefined) updateData.kode_cabang = kode_cabang;
                     if (nama_cabang !== undefined) updateData.nama_cabang = nama_cabang;
                     if (wilayah_cabang !== undefined) updateData.wilayah_cabang = wilayah_cabang;
@@ -257,7 +238,6 @@ exports.getCab = async (req, res) => {
                         no: no++,
                         id_cab: item.id_cab,
                         tahun: item.tahun,
-                        nik_cabang: item.nik_cabang,
                         kode_cabang: item.kode_cabang,
                         nama_cabang: item.nama_cabang,
                         wilayah_cabang: item.wilayah_cabang,
@@ -342,7 +322,6 @@ exports.getCabById = async (req, res) => {
                         data: {
                             id_cab: getData.id_cab,
                             tahun: getData.tahun,
-                            nik_cabang: getData.nik_cabang,
                             kode_cabang: getData.kode_cabang,
                             nama_cabang: getData.nama_cabang,
                             wilayah_cabang: getData.wilayah_cabang,

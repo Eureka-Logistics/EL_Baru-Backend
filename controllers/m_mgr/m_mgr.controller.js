@@ -14,38 +14,21 @@ exports.createMgr = async (req, res) => {
         });
 
         if (getUser) {
-            const { tahun, id_bu, nama_bu, nik_manager, kode_manager, nama_manager, wilayah_manager } = req.body;
+            const { tahun, id_bu, nama_bu, kode_manager, nama_manager, wilayah_manager } = req.body;
 
             // Validasi field wajib
-            if (!tahun || !id_bu || !nama_bu || !nik_manager) {
+            if (!tahun || !id_bu || !nama_bu) {
                 output = {
                     status: {
                         code: 400,
-                        message: 'Field tahun, id_bu, nama_bu, dan nik_manager wajib diisi'
+                        message: 'Field tahun, id_bu, dan nama_bu wajib diisi'
                     }
                 };
             } else {
-                // Cek apakah sudah ada dengan nik_manager yang sama
-                const existingMgr = await models.m_mgr.findOne({
-                    where: {
-                        nik_manager: nik_manager,
-                        active: 'active'
-                    }
-                });
-
-                if (existingMgr) {
-                    output = {
-                        status: {
-                            code: 402,
-                            message: 'Manager dengan NIK tersebut sudah ada'
-                        }
-                    };
-                } else {
                     const createData = await models.m_mgr.create({
                         tahun: tahun,
                         id_bu: id_bu,
                         nama_bu: nama_bu,
-                        nik_manager: nik_manager,
                         kode_manager: kode_manager || null,
                         nama_manager: nama_manager || null,
                         wilayah_manager: wilayah_manager || null,
@@ -61,7 +44,6 @@ exports.createMgr = async (req, res) => {
                             data: createData
                         };
                     }
-                }
             }
         }
     } catch (error) {
@@ -93,7 +75,7 @@ exports.editMgr = async (req, res) => {
         });
 
         if (getUser) {
-            const { id_mgr, tahun, id_bu, nama_bu, nik_manager, kode_manager, nama_manager, wilayah_manager } = req.body;
+            const { id_mgr, tahun, id_bu, nama_bu, kode_manager, nama_manager, wilayah_manager } = req.body;
 
             if (!id_mgr) {
                 output = {
@@ -121,7 +103,6 @@ exports.editMgr = async (req, res) => {
                     if (tahun !== undefined) updateData.tahun = tahun;
                     if (id_bu !== undefined) updateData.id_bu = id_bu;
                     if (nama_bu !== undefined) updateData.nama_bu = nama_bu;
-                    if (nik_manager !== undefined) updateData.nik_manager = nik_manager;
                     if (kode_manager !== undefined) updateData.kode_manager = kode_manager;
                     if (nama_manager !== undefined) updateData.nama_manager = nama_manager;
                     if (wilayah_manager !== undefined) updateData.wilayah_manager = wilayah_manager;
@@ -273,7 +254,6 @@ exports.getMgrByBu = async (req, res) => {
                             tahun: item.tahun,
                             id_bu: item.id_bu,
                             nama_bu: item.nama_bu,
-                            nik_manager: item.nik_manager,
                             kode_manager: item.kode_manager,
                             nama_manager: item.nama_manager,
                             wilayah_manager: item.wilayah_manager,
@@ -361,7 +341,6 @@ exports.getMgrById = async (req, res) => {
                             tahun: getData.tahun,
                             id_bu: getData.id_bu,
                             nama_bu: getData.nama_bu,
-                            nik_manager: getData.nik_manager,
                             kode_manager: getData.kode_manager,
                             nama_manager: getData.nama_manager,
                             wilayah_manager: getData.wilayah_manager,

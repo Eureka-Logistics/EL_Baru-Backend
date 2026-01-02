@@ -19,10 +19,6 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.STRING(100),
       allowNull: false
     },
-    nik_gl: {
-      type: DataTypes.STRING(30),
-      allowNull: false
-    },
     kode_gl: {
       type: DataTypes.STRING(30),
       allowNull: true
@@ -56,13 +52,6 @@ module.exports = function(sequelize, DataTypes) {
         using: "BTREE",
         fields: [
           { name: "id_gl" },
-        ]
-      },
-      {
-        name: "nik_gl",
-        using: "BTREE",
-        fields: [
-          { name: "nik_gl" },
         ]
       },
     ]

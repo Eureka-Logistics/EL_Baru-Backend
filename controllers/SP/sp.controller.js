@@ -10579,6 +10579,7 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                     // totalBiayaLain: sumBiayaLain,
                     totalDiskon: sumDiscont,
                     new: (getPengadaan.map((i) => i.new) != '' ? getPengadaan.map((i) => i.new) : getDetail.map((i) => i.m_pengadaan.new))[0],
+                    id_oddo: getPengadaan.map((i) => i.id_oddo)[0] || null,
 
 
                     // subTotal: service[0] != "Charter" ? core.sumArray(getPrice) * core.sumArray(getPriceBerat) : core.sumArray(getPrice),
@@ -10809,6 +10810,70 @@ exports.getSpListAllDetail_vico = async (req, res) => {
 
 
 
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+exports.updateIdOddo = async (req, res) => {
+    let output = {};
+    try {
+        const getUser = await models.users.findOne(
+            {
+                where: {
+                    id: req.user.id
+                }
+            }
+        )
+        if (getUser) {
+            if (!req.body.id_mp) {
+                output = {
+                    status: {
+                        code: 400,
+                        message: 'Field id_mp wajib diisi'
+                    }
+                }
+            } else {
+                const updData = await models.m_pengadaan.update(
+                    {
+                        id_oddo: req.body.id_oddo || null
+                    },
+                    {
+                        where: {
+                            id_mp: req.body.id_mp
+                        }
+                    }
+                )
+                if (updData) {
+                    output = {
+                        status: {
+                            code: 200,
+                            message: "Success update id_oddo"
+                        }
+                    }
+                } else {
+                    output = {
+                        status: {
+                            code: 404,
+                            message: "Data tidak ditemukan"
+                        }
+                    }
+                }
+            }
+        }
     } catch (error) {
         output = {
             status: {
@@ -11090,7 +11155,8 @@ exports.getSpListAllDetail = async (req, res) => {
                 const noSpk = (getPengadaan.map((i) => i.mspk) != '' ? getPengadaan.map((i) => i.mspk) : getDetail.map((i) => i.m_pengadaan.mspk));
                 const noSp = (getPengadaan.map((i) => i.msp) != '' ? getPengadaan.map((i) => i.msp) : getDetail.map((i) => i.m_pengadaan.msp));
                 const memo = (getPengadaan.map((i) => i.memo) != '' ? getPengadaan.map((i) => i.memo) : getDetail.map((i) => i.m_pengadaan.memo));
-                const hargaTotal = (getPengadaan.map((i) => i.biaya_jalan) != '' ? getPengadaan.map((i) => i.biaya_jalan) : getPengadaan.map((i) => i.biaya_jalan));
+                // Ambil nilai pertama karena biaya_jalan sudah merupakan total dari semua detail, tidak perlu dijumlahkan
+                const hargaTotal = getPengadaan.length > 0 ? (getPengadaan[0].biaya_jalan || 0) : 0;
                 const melTotal = (getPengadaan.map((i) => i.biaya_mel) != '' ? getPengadaan.map((i) => i.biaya_mel) : getPengadaan.map((i) => i.biaya_mel));
                 const biayaLainTotal = (getPengadaan.map((i) => i.biaya_lain) != '' ? getPengadaan.map((i) => i.biaya_lain) : getPengadaan.map((i) => i.biaya_lain));
                 const biayaMultimuatTotal = (getPengadaan.map((i) => i.biaya_multi_muat) != '' ? getPengadaan.map((i) => i.biaya_multi_muat) : getPengadaan.map((i) => i.biaya_multi_muat));
@@ -11153,7 +11219,8 @@ exports.getSpListAllDetail = async (req, res) => {
                 const sumMel = core.sumArray(melTotal)
                 const sumBiayaLa = core.sumArray(biayaLainTotal)
                 const sumHargaSelanjutnya = core.sumArray(hargaSelanjutnyaTotal)
-                const sumHarga = core.sumArray(hargaTotal)
+                // hargaTotal sudah merupakan nilai tunggal (bukan array), jadi langsung gunakan nilainya
+                const sumHarga = hargaTotal
 
                 // const getMuat = await models.alamat.findOne(
 

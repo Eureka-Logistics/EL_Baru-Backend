@@ -85,6 +85,7 @@ router.get('/get-SP-all', authentication, spController.getSpListAll2);
 router.get('/export-sp-list-excel', authentication, spController.exportSpListExcel);
 router.get('/get-SP-all-approve', authentication, spController.getSpListApprove);
 router.get('/get-SP-all-detail-vico', authentication, spController.getSpListAllDetail_vico);
+router.post('/update-id-oddo', authentication, spController.updateIdOddo);
 router.get('/get-SP-all-detail', authentication, spController.getSpListAllDetail);
 
 router.get('/get-lost-sales', authentication, spController.getLostSales);
