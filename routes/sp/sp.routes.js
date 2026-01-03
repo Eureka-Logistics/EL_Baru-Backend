@@ -9,9 +9,11 @@ router.get('/get-SP-select-create', authentication, spController.getSelectCreate
 router.get('/get-SP-select-detail', authentication, spController.getSelectDetailSp);
 router.get('/get-list-alamat', authentication, spController.getListAlamat);
 router.post('/create-SP', authentication, middlewareDriver.validate('createSp'), spController.createSp);
+router.post('/create-SP-vico', authentication, middlewareDriver.validate('createSp'), spController.createSp_vico);
 router.post('/get-tarif-alamat', authentication, spController.getTarifAlamat);
 router.post('/ganti-alamat', authentication, spController.gantiAlamat);
 router.post('/edit-SP', authentication, spController.editSp);
+router.post('/edit-SP-vico', authentication, spController.editSp_vico);
 router.post('/create-SP-detail', authentication, spController.createDetailSp);
 router.post('/create-SP-detail-vico', authentication, spController.createDetailSp_vico);
 // router.post('/create-SM-detail', authentication, spController.createDetailSM);
@@ -67,6 +69,7 @@ router.put('/update-sm-cost/:id_msm_cost', authentication, spController.updateSm
 router.delete('/delete-sm-cost/:id_msm_cost', authentication, spController.deleteSmCost);
 router.put('/approve-sm-cost/:id_msm_cost', authentication, spController.approveSmCost);
 router.put('/reject-sm-cost/:id_msm_cost', authentication, spController.rejectSmCost);
+router.get('/get-biaya-tambahan-sp-detail', authentication, spController.getBiayaTambahanSpDetail);
 router.get('/get-SP-detail-purch', authentication, spController.getDetailApprovePurch);
 router.get('/get-SP-detail-purch-idmp', authentication, spController.getDetailApprovePurchIDMP);
 router.post('/approve-SP-purch', authentication, spController.approvePurchasing);

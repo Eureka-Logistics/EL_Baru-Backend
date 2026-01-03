@@ -1025,6 +1025,96 @@ exports.updateReturStage = async (req, res) => {
   }
 };
 
+// Update hanya pihak_dibebankan dan append history entry
+exports.updateReturPihakDibebankan = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { pihak_dibebankan, id_admin, created_by_name } = req.body;
+
+    if (pihak_dibebankan === undefined) {
+      return res.status(400).json({ message: "pihak_dibebankan wajib diisi" });
+    }
+
+    // Get old value for history
+    const returData = await models.m_sm_retur.findOne({
+      where: { id_msm_retur: id },
+      attributes: ['pihak_dibebankan']
+    });
+
+    if (!returData) {
+      return res.status(404).json({ message: "Data retur tidak ditemukan" });
+    }
+
+    const oldPihakDibebankan = returData.pihak_dibebankan || null;
+    
+    // Normalize empty string to null
+    const toNullIfEmpty = (v) => {
+      if (typeof v === 'undefined' || v === null) return null;
+      if (typeof v === 'string' && v.trim() === '') return null;
+      return v;
+    };
+    const newPihakDibebankan = toNullIfEmpty(pihak_dibebankan);
+
+    // Update pihak_dibebankan using Sequelize model
+    await models.m_sm_retur.update(
+      { pihak_dibebankan: newPihakDibebankan },
+      { where: { id_msm_retur: id } }
+    );
+
+    // Insert history note for pihak_dibebankan change
+    try {
+      const editorUserId = (req.user && (req.user.id_user || req.user.id))
+        ? (req.user.id_user || req.user.id)
+        : (id_admin || null);
+
+      // Use provided name first, otherwise lookup from database
+      let editorName = created_by_name || null;
+      
+      if (!editorName && editorUserId) {
+        try {
+          const editorUser = await models.users.findOne({
+            where: { id: editorUserId },
+            attributes: ['nama_lengkap']
+          });
+          if (editorUser) {
+            editorName = editorUser.nama_lengkap;
+          }
+        } catch (e) {
+          // ignore user name fetch errors, fall back to ID only
+        }
+      }
+
+      let chat = editorName
+        ? `Pihak dibebankan diubah oleh ${editorUserId} (${editorName})`
+        : `Pihak dibebankan diubah oleh ${editorUserId || '-'}`;
+      
+      // Add old and new value info
+      if (oldPihakDibebankan !== null && newPihakDibebankan !== null) {
+        chat += ` - Dari: ${oldPihakDibebankan} menjadi: ${newPihakDibebankan}`;
+      } else if (oldPihakDibebankan === null && newPihakDibebankan !== null) {
+        chat += ` - Diubah menjadi: ${newPihakDibebankan}`;
+      } else if (oldPihakDibebankan !== null && newPihakDibebankan === null) {
+        chat += ` - Dihapus (sebelumnya: ${oldPihakDibebankan})`;
+      }
+      
+      await models.m_sm_retur_history.create({
+        id_msm_retur: id,
+        id_user: editorUserId,
+        chat: chat,
+        nominal: 0,
+        date_added: new Date(),
+        created_by_name: editorName
+      });
+    } catch (e) {
+      console.error('Failed to insert pihak_dibebankan update history m_sm_retur_history:', e.message || e);
+    }
+
+    res.json({ message: "Pihak dibebankan berhasil diperbarui" });
+  } catch (error) {
+    res.status(500).json({ message: "Gagal memperbarui pihak dibebankan", error: error.message });
+  }
+};
+
 exports.deleteRetur = async (req, res) => {
   try {
     const { id } = req.params;
