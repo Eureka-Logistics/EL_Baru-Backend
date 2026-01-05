@@ -58,6 +58,14 @@ module.exports = function(sequelize, DataTypes) {
     write_date: {
       type: DataTypes.STRING(23),
       allowNull: true
+    },
+    company_id: {
+      type: DataTypes.STRING(1),
+      allowNull: true
+    },
+    template_name: {
+      type: DataTypes.STRING(89),
+      allowNull: true
     }
   }, {
     sequelize,

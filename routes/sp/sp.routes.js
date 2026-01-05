@@ -26,6 +26,7 @@ router.post('/edit-SP-detail-vico', authentication, spController.editSpDetail_vi
 router.post('/edit-SP-detail-race', authentication, spController.editSpDetail_race);
 router.get('/get-SP-sales', authentication, spController.getSpSales);
 router.get('/get-detail-sp', authentication, spController.getSpDetailSales);
+router.get('/get-detail-sp-race', authentication, spController.getSpDetailRace);
 router.post('/solved-issue', authentication, spController.solvedIssue);
 
 

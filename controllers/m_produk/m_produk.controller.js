@@ -3,6 +3,32 @@ const models = core.models();
 const customErrorMiddleware = require('../../middleware/middleware.result');
 const { Op } = require('sequelize');
 
+// Helper function to extract value from template_name JSON
+const extractTemplateName = (templateName) => {
+    if (!templateName) return null;
+    try {
+        const parsed = JSON.parse(templateName);
+        if (parsed && parsed.en_US) {
+            return parsed.en_US;
+        }
+        return null;
+    } catch (e) {
+        // If not valid JSON, return as is
+        return templateName;
+    }
+};
+
+// Helper function to format produk data for response
+const formatProdukResponse = (produk) => {
+    if (!produk) return produk;
+    const data = produk.toJSON ? produk.toJSON() : produk;
+    const extractedTemplateName = extractTemplateName(data.template_name);
+    return {
+        ...data,
+        default_code: extractedTemplateName || data.default_code
+    };
+};
+
 // Create Produk
 exports.createProduk = async (req, res) => {
     let output = {};
@@ -23,7 +49,9 @@ exports.createProduk = async (req, res) => {
                 volume,
                 weight,
                 active,
-                can_image_variant_1024_be_zoomed
+                can_image_variant_1024_be_zoomed,
+                company_id,
+                template_name
             } = req.body;
 
             // Helper function to convert boolean to t/f format
@@ -47,7 +75,9 @@ exports.createProduk = async (req, res) => {
                 active: convertToTf(active),
                 can_image_variant_1024_be_zoomed: convertToTf(can_image_variant_1024_be_zoomed),
                 create_date: core.moment(Date.now()).format('DD/M/YYYY HH:mm:ss') + '.-1f',
-                write_date: core.moment(Date.now()).format('DD/M/YYYY HH:mm:ss') + '.-1f'
+                write_date: core.moment(Date.now()).format('DD/M/YYYY HH:mm:ss') + '.-1f',
+                company_id: company_id || null,
+                template_name: template_name || null
             });
 
             if (createData) {
@@ -99,7 +129,9 @@ exports.editProduk = async (req, res) => {
                 volume,
                 weight,
                 active,
-                can_image_variant_1024_be_zoomed
+                can_image_variant_1024_be_zoomed,
+                company_id,
+                template_name
             } = req.body;
 
             if (!id) {
@@ -142,6 +174,8 @@ exports.editProduk = async (req, res) => {
                     if (weight !== undefined) updateData.weight = weight;
                     if (active !== undefined) updateData.active = convertToTf(active);
                     if (can_image_variant_1024_be_zoomed !== undefined) updateData.can_image_variant_1024_be_zoomed = convertToTf(can_image_variant_1024_be_zoomed);
+                    if (company_id !== undefined) updateData.company_id = company_id;
+                    if (template_name !== undefined) updateData.template_name = template_name;
                     updateData.write_uid = req.user.id || null;
                     updateData.write_date = core.moment(Date.now()).format('DD/M/YYYY HH:mm:ss') + '.-1f';
 
@@ -195,23 +229,42 @@ exports.getAllProduk = async (req, res) => {
                 keyword,
                 page = 1,
                 limit = 10,
-                active
+                active,
+                company_id
             } = req.query;
 
             const offset = (parseInt(page) - 1) * parseInt(limit);
-            const whereCondition = {};
+            const whereCondition = {
+                [Op.and]: [
+                    // Filter active harus 't'
+                    { active: 't' }
+                ]
+            };
 
             // Filter by keyword
             if (keyword) {
-                whereCondition[Op.or] = [
-                    { default_code: { [Op.like]: `%${keyword}%` } },
-                    { barcode: { [Op.like]: `%${keyword}%` } }
-                ];
+                whereCondition[Op.and].push({
+                    [Op.or]: [
+                        { default_code: { [Op.like]: `%${keyword}%` } },
+                        { barcode: { [Op.like]: `%${keyword}%` } }
+                    ]
+                });
             }
 
-            // Filter by active
+            // Override filter active jika ada di query parameter
             if (active !== undefined) {
-                whereCondition.active = active;
+                // Ganti kondisi active yang sudah ada
+                const activeIndex = whereCondition[Op.and].findIndex(cond => cond.active);
+                if (activeIndex !== -1) {
+                    whereCondition[Op.and][activeIndex].active = active;
+                } else {
+                    whereCondition[Op.and].push({ active: active });
+                }
+            }
+
+            // Filter by company_id
+            if (company_id !== undefined && company_id !== null && company_id !== '') {
+                whereCondition[Op.and].push({ company_id: company_id });
             }
 
             const { count, rows } = await models.m_produk.findAndCountAll({
@@ -226,7 +279,7 @@ exports.getAllProduk = async (req, res) => {
                     code: 200,
                     message: 'Success get all Produk'
                 },
-                data: rows,
+                data: rows.map(formatProdukResponse),
                 pagination: {
                     total: count,
                     page: parseInt(page),
@@ -293,7 +346,7 @@ exports.getDetailProduk = async (req, res) => {
                             code: 200,
                             message: 'Success get detail Produk'
                         },
-                        data: getProduk
+                        data: formatProdukResponse(getProduk)
                     };
                 }
             }

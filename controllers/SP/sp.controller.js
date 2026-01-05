@@ -1182,10 +1182,54 @@ exports.createSp = async (req, res) => {
             }
         )
 
+        const getCodePh = await models.m_pengadaan.findAll(
+            {
+                order: [['id_mp', 'desc']],
+                limit: 1,
+                where: {
+                    ph: {
+                        [Op.like]: `Q${getUser.kode_cabang}%`
+                    },
+                }
+            }
+        )
 
         const dateNow = core.moment(Date.now()).format('YY')
 
         const kodeCabang = getUser.kode_cabang
+
+        // Generate ph yang unik
+        let generatedPh = "Q" + kodeCabang + dateNow + "-" + "00001";
+        if (getCodePh.length > 0) {
+            const lastPh = getCodePh[0].ph;
+            // Format: Q{kodeCabang}{tahun}-{nomor}
+            // Contoh: QRCCGK26-00001
+            const phPrefix = "Q" + kodeCabang + dateNow + "-";
+            if (lastPh.startsWith(phPrefix)) {
+                // Extract nomor dari ph terakhir
+                const lastPhNumber = Number(lastPh.substring(phPrefix.length));
+                const phCode = lastPhNumber + 1;
+                
+                if (phCode <= 99999) {
+                    const getcharacterNumberPh = phCode.toString();
+                    let zeroCodePh = "";
+                    
+                    if (getcharacterNumberPh.length == 1) {
+                        zeroCodePh = "0000";
+                    } else if (getcharacterNumberPh.length == 2) {
+                        zeroCodePh = "000";
+                    } else if (getcharacterNumberPh.length == 3) {
+                        zeroCodePh = "00";
+                    } else if (getcharacterNumberPh.length == 4) {
+                        zeroCodePh = "0";
+                    } else if (getcharacterNumberPh.length == 5) {
+                        zeroCodePh = "";
+                    }
+                    
+                    generatedPh = "Q" + kodeCabang + dateNow + "-" + zeroCodePh + phCode;
+                }
+            }
+        }
 
         if (getCode != "" && getCodeSpk != "") {
             if (getCode.length === 0) {
@@ -1225,7 +1269,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -1346,7 +1390,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -1504,7 +1548,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -1626,7 +1670,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -1815,7 +1859,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -1938,7 +1982,7 @@ exports.createSp = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -2068,7 +2112,7 @@ exports.createSp = async (req, res) => {
                 {
                     'id_admin': req.user.id,
                     'mp_ref': 0,
-                    'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                    'ph': generatedPh,
                     'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'memo': req.body.memo,
@@ -2279,16 +2323,16 @@ exports.createSp_vico = async (req, res) => {
             }
         )
 
-        const getSalesDataM = getSalesData ? await models.m_sales.findOne(
+        const getSalesDataM = await models.m_sales.findOne(
             {
                 where: {
-                    nik_sales: getSalesData.id_karyawan.toString(),
+                    id_sales: req.body.id_sales,
                     active: 'active'
                 },
                 order: [['tahun', 'DESC']],
                 limit: 1
             }
-        ) : null
+        )
 
         const getCode = await models.m_pengadaan.findAll(
             {
@@ -2314,10 +2358,54 @@ exports.createSp_vico = async (req, res) => {
             }
         )
 
+        const getCodePh = await models.m_pengadaan.findAll(
+            {
+                order: [['id_mp', 'desc']],
+                limit: 1,
+                where: {
+                    ph: {
+                        [Op.like]: `Q${getUser.kode_cabang}%`
+                    },
+                }
+            }
+        )
 
         const dateNow = core.moment(Date.now()).format('YY')
 
         const kodeCabang = getUser.kode_cabang
+
+        // Generate ph yang unik
+        let generatedPh = "Q" + kodeCabang + dateNow + "-" + "00001";
+        if (getCodePh.length > 0) {
+            const lastPh = getCodePh[0].ph;
+            // Format: Q{kodeCabang}{tahun}-{nomor}
+            // Contoh: QRCCGK26-00001
+            const phPrefix = "Q" + kodeCabang + dateNow + "-";
+            if (lastPh.startsWith(phPrefix)) {
+                // Extract nomor dari ph terakhir
+                const lastPhNumber = Number(lastPh.substring(phPrefix.length));
+                const phCode = lastPhNumber + 1;
+                
+                if (phCode <= 99999) {
+                    const getcharacterNumberPh = phCode.toString();
+                    let zeroCodePh = "";
+                    
+                    if (getcharacterNumberPh.length == 1) {
+                        zeroCodePh = "0000";
+                    } else if (getcharacterNumberPh.length == 2) {
+                        zeroCodePh = "000";
+                    } else if (getcharacterNumberPh.length == 3) {
+                        zeroCodePh = "00";
+                    } else if (getcharacterNumberPh.length == 4) {
+                        zeroCodePh = "0";
+                    } else if (getcharacterNumberPh.length == 5) {
+                        zeroCodePh = "";
+                    }
+                    
+                    generatedPh = "Q" + kodeCabang + dateNow + "-" + zeroCodePh + phCode;
+                }
+            }
+        }
 
         if (getCode != "" && getCodeSpk != "") {
             if (getCode.length === 0) {
@@ -2357,7 +2445,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -2482,7 +2570,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -2644,7 +2732,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -2770,7 +2858,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -2963,7 +3051,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -3089,7 +3177,7 @@ exports.createSp_vico = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -3222,19 +3310,19 @@ exports.createSp_vico = async (req, res) => {
                 {
                     'id_admin': req.user.id,
                     'mp_ref': 0,
-                    'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                    'ph': generatedPh,
                     'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'memo': req.body.memo,
                     'id_sales': req.body.id_sales,
                     'id_bu': getUser.id_bu,
                     'id_bu_branch': getUser.id_bu_brench,
-                    'code_sales': getSalesData && getSalesData.m_bu_employee ? getSalesData.m_bu_employee.code_employee : null,
-                    'nama_sales': getSalesData ? getSalesData.nama_lengkap : null,
-                    'id_gl': req.body.id_gl,
-                    'id_asm': req.body.id_asm,
-                    'id_mgr': req.body.id_mgr,
-                    'id_kacab': req.body.id_kacab,
+                    'code_sales': getSalesDataM ? getSalesDataM.nik_sales : null,
+                    'nama_sales': getSalesDataM ? getSalesDataM.nama_sales : null,
+                    'id_gl': getSalesDataM ? getSalesDataM.kode_gl : null,
+                    'id_asm': getSalesDataM ? getSalesDataM.kode_asm : null,
+                    'id_mgr': getSalesDataM ? getSalesDataM.kode_manager : null,
+                    'id_kacab': getSalesDataM ? getSalesDataM.kode_cabang : null,
                     'id_amd': req.body.id_amd,
                     'id_customer': req.body.id_customer,
                     'alamat_invoice': req.body.alamat_invoice,
@@ -3436,16 +3524,16 @@ exports.createSp_race = async (req, res) => {
             }
         )
 
-        const getSalesDataM = getSalesData ? await models.m_sales.findOne(
+        const getSalesDataM = await models.m_sales.findOne(
             {
                 where: {
-                    nik_sales: getSalesData.id_karyawan.toString(),
+                    id_sales: req.body.id_sales,
                     active: 'active'
                 },
                 order: [['tahun', 'DESC']],
                 limit: 1
             }
-        ) : null
+        )
 
         const getCode = await models.m_pengadaan.findAll(
             {
@@ -3471,6 +3559,17 @@ exports.createSp_race = async (req, res) => {
             }
         )
 
+        const getCodePh = await models.m_pengadaan.findAll(
+            {
+                order: [['id_mp', 'desc']],
+                limit: 1,
+                where: {
+                    ph: {
+                        [Op.like]: `Q${getUser.kode_cabang}%`
+                    },
+                }
+            }
+        )
 
         const dateNow = core.moment(Date.now()).format('YY')
 
@@ -3478,23 +3577,57 @@ exports.createSp_race = async (req, res) => {
 
         const tglOrder = core.moment(req.body.tgl_order).format("YYYY-MM-DD HH:mm:ss")
 
+        // Generate ph yang unik
+        let generatedPh = "Q" + kodeCabang + dateNow + "-" + "00001";
+        if (getCodePh.length > 0) {
+            const lastPh = getCodePh[0].ph;
+            // Format: Q{kodeCabang}{tahun}-{nomor}
+            // Contoh: QRCCGK26-00001
+            const phPrefix = "Q" + kodeCabang + dateNow + "-";
+            if (lastPh.startsWith(phPrefix)) {
+                // Extract nomor dari ph terakhir
+                const lastPhNumber = Number(lastPh.substring(phPrefix.length));
+                const phCode = lastPhNumber + 1;
+                
+                if (phCode <= 99999) {
+                    const getcharacterNumberPh = phCode.toString();
+                    let zeroCodePh = "";
+                    
+                    if (getcharacterNumberPh.length == 1) {
+                        zeroCodePh = "0000";
+                    } else if (getcharacterNumberPh.length == 2) {
+                        zeroCodePh = "000";
+                    } else if (getcharacterNumberPh.length == 3) {
+                        zeroCodePh = "00";
+                    } else if (getcharacterNumberPh.length == 4) {
+                        zeroCodePh = "0";
+                    } else if (getcharacterNumberPh.length == 5) {
+                        zeroCodePh = "";
+                    }
+                    
+                    generatedPh = "Q" + kodeCabang + dateNow + "-" + zeroCodePh + phCode;
+                }
+            }
+        }
+
         // Hitung subtotal dan total_keseluruhan dari PengadaanDetail
+        // subtotal = sum(harga * qty) dari array
         let subtotal = 0;
         let totalPajak = 0;
         if (req.body.PengadaanDetail && Array.isArray(req.body.PengadaanDetail) && req.body.PengadaanDetail.length > 0) {
             req.body.PengadaanDetail.forEach((detail) => {
-                const detailTotal = detail.total || detail.jumlah || 0;
+                const harga = detail.harga || 0;
+                const qty = detail.qty || 0;
                 const detailPajak = detail.pajak || 0;
                 
-                // subtotal = sum dari total array
-                subtotal += detailTotal;
+                // subtotal = sum(harga * qty)
+                const hargaQty = harga * qty;
+                subtotal += hargaQty;
                 
                 // Hitung pajak dari detail (pajak adalah persentase)
                 if (detailPajak > 0) {
                     // Pajak adalah persentase (misalnya 1 = 1%)
-                    // Hitung subtotal sebelum pajak: subtotal_sebelum_pajak = total / (1 + pajak/100)
-                    const subtotalSebelumPajak = detailTotal / (1 + (detailPajak / 100));
-                    const pajakAmount = subtotalSebelumPajak * (detailPajak / 100);
+                    const pajakAmount = hargaQty * (detailPajak / 100);
                     totalPajak += pajakAmount;
                 }
             });
@@ -3508,7 +3641,7 @@ exports.createSp_race = async (req, res) => {
                 const detailPromises = req.body.PengadaanDetail.map(async (detail) => {
                     return await models.m_pengadaan_detail.create({
                         'id_mp': createSP.id_mp,
-                        'ph': createSP.ph,
+                        'ph': createSP.msp,
                         'no_sj': "",
                         'do': "",
                         'via': "darat",
@@ -3608,7 +3741,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -3737,7 +3870,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -3903,7 +4036,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -4033,7 +4166,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -4230,7 +4363,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + zeroCode + spCode,
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + zeroCodeSpk + spkCode,
                                 'memo': req.body.memo,
@@ -4360,7 +4493,7 @@ exports.createSp_race = async (req, res) => {
                             {
                                 'id_admin': req.user.id,
                                 'mp_ref': 0,
-                                'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                                'ph': generatedPh,
                                 'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                                 'memo': req.body.memo,
@@ -4497,19 +4630,19 @@ exports.createSp_race = async (req, res) => {
                 {
                     'id_admin': req.user.id,
                     'mp_ref': 0,
-                    'ph': "Q" + kodeCabang + core.moment(Date.now()).format('YY') + "-" + "00001",
+                    'ph': generatedPh,
                     'msp': getPerusahaan.id_bu + "-SO-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'mspk': getPerusahaan.id_bu + "-PK-" + core.moment(Date.now()).format('YY') + '-' + "000001",
                     'memo': req.body.memo,
                     'id_sales': req.body.id_sales,
                     'id_bu': getUser.id_bu,
                     'id_bu_branch': getUser.id_bu_brench,
-                    'code_sales': getSalesData && getSalesData.m_bu_employee ? getSalesData.m_bu_employee.code_employee : null,
-                    'nama_sales': getSalesData ? getSalesData.nama_lengkap : null,
-                    'id_gl': req.body.id_gl,
-                    'id_asm': req.body.id_asm,
-                    'id_mgr': req.body.id_mgr,
-                    'id_kacab': req.body.id_kacab,
+                    'code_sales': getSalesDataM ? getSalesDataM.nik_sales : null,
+                    'nama_sales': getSalesDataM ? getSalesDataM.nama_sales : null,
+                    'id_gl': getSalesDataM ? getSalesDataM.kode_gl : null,
+                    'id_asm': getSalesDataM ? getSalesDataM.kode_asm : null,
+                    'id_mgr': getSalesDataM ? getSalesDataM.kode_manager : null,
+                    'id_kacab': getSalesDataM ? getSalesDataM.kode_cabang : null,
                     'id_amd': req.body.id_amd,
                     'id_customer': req.body.id_customer,
                     'alamat_invoice': req.body.alamat_invoice,
@@ -4674,6 +4807,280 @@ exports.createSp_race = async (req, res) => {
         res.status(output.status.code).send(output)
     } else {
         res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+exports.getSpDetailRace = async (req, res) => {
+    try {
+        // Setup associations
+        if (!models.m_pengadaan.associations.m_pengadaan_details) {
+            models.m_pengadaan.hasMany(models.m_pengadaan_detail, { foreignKey: 'id_mp', as: 'm_pengadaan_details' });
+        }
+        if (!models.m_pengadaan.associations.m_status_order) {
+            models.m_pengadaan.hasOne(models.m_status_order, { foreignKey: 'id_mp', as: 'm_status_order' });
+        }
+        if (!models.m_pengadaan.associations.m_pengadaan_approve) {
+            models.m_pengadaan.hasOne(models.m_pengadaan_approve, { foreignKey: 'id_mp', as: 'm_pengadaan_approve' });
+        }
+        if (!models.m_pengadaan.associations.m_chats) {
+            models.m_pengadaan.hasMany(models.m_chat, { foreignKey: 'id_mp', as: 'm_chats' });
+        }
+        if (!models.m_pengadaan.associations.customer) {
+            models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer', as: 'customer' });
+        }
+        if (!models.m_pengadaan.associations.user) {
+            models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales', as: 'user' });
+        }
+        if (!models.m_pengadaan_detail.associations.m_produk) {
+            models.m_pengadaan_detail.belongsTo(models.m_produk, { targetKey: 'id', foreignKey: 'id_produk', as: 'm_produk' });
+        }
+        if (!models.m_chat.associations.chat_user) {
+            models.m_chat.belongsTo(models.users, { targetKey: 'id', foreignKey: 'user', as: 'chat_user' });
+        }
+
+        // Get parameter (id_mp, msp, or ph)
+        const idMp = req.query.id_mp || req.query.idmp;
+        const msp = req.query.msp;
+        const ph = req.query.ph;
+
+        if (!idMp && !msp && !ph) {
+            output = {
+                status: {
+                    code: 400,
+                    message: 'Parameter id_mp, msp, or ph is required'
+                }
+            };
+        } else {
+            // Build where condition
+            let whereCondition = {};
+            if (idMp) {
+                whereCondition.id_mp = idMp;
+            } else if (msp) {
+                whereCondition.msp = msp;
+            } else if (ph) {
+                whereCondition.ph = ph;
+            }
+
+            const getSp = await models.m_pengadaan.findOne({
+                where: whereCondition,
+                include: [
+                    {
+                        model: models.m_pengadaan_detail,
+                        as: 'm_pengadaan_details',
+                        required: false,
+                        include: [
+                            {
+                                model: models.m_produk,
+                                as: 'm_produk',
+                                required: false
+                            }
+                        ]
+                    },
+                    {
+                        model: models.m_status_order,
+                        as: 'm_status_order',
+                        required: false
+                    },
+                    {
+                        model: models.m_pengadaan_approve,
+                        as: 'm_pengadaan_approve',
+                        required: false
+                    },
+                    {
+                        model: models.m_chat,
+                        as: 'm_chats',
+                        required: false,
+                        include: [
+                            {
+                                model: models.users,
+                                as: 'chat_user',
+                                required: false,
+                                attributes: ['id', 'nama_lengkap', 'email']
+                            }
+                        ],
+                        order: [['tgl_chat', 'DESC']]
+                    },
+                    {
+                        model: models.customer,
+                        as: 'customer',
+                        required: false
+                    },
+                    {
+                        model: models.users,
+                        as: 'user',
+                        required: false,
+                        attributes: ['id', 'nama_lengkap', 'email']
+                    }
+                ]
+            });
+
+            if (getSp) {
+                // Format response
+                output = {
+                    status: {
+                        code: 200,
+                        message: 'Success get SP detail'
+                    },
+                    data: {
+                        id_mp: getSp.id_mp,
+                        mp_ref: getSp.mp_ref,
+                        ph: getSp.ph,
+                        msp: getSp.msp,
+                        mspk: getSp.mspk,
+                        memo: getSp.memo,
+                        tgl_order: getSp.tgl_order ? core.moment(getSp.tgl_order).format('YYYY-MM-DD HH:mm:ss') : null,
+                        tgl_pickup: getSp.tgl_pickup ? core.moment(getSp.tgl_pickup).format('YYYY-MM-DD HH:mm:ss') : null,
+                        tgl_bongkar: getSp.tgl_bongkar ? core.moment(getSp.tgl_bongkar).format('YYYY-MM-DD HH:mm:ss') : null,
+                        waktu_muat: getSp.waktu_muat,
+                        waktu_bongkar: getSp.waktu_bongkar,
+                        id_sales: getSp.id_sales,
+                        id_bu: getSp.id_bu,
+                        id_bu_branch: getSp.id_bu_branch,
+                        code_sales: getSp.code_sales,
+                        nama_sales: getSp.nama_sales,
+                        id_gl: getSp.id_gl,
+                        id_asm: getSp.id_asm,
+                        id_mgr: getSp.id_mgr,
+                        id_kacab: getSp.id_kacab,
+                        id_amd: getSp.id_amd,
+                        id_customer: getSp.id_customer,
+                        alamat_invoice: getSp.alamat_invoice,
+                        service: getSp.service,
+                        jenis_barang: getSp.jenis_barang,
+                        packing: getSp.packing,
+                        asuransi: getSp.asuransi,
+                        asuransi_fee: getSp.asuransi_fee,
+                        biaya_muat: getSp.biaya_muat,
+                        biaya_muat_bongkar: getSp.biaya_muat_bongkar,
+                        overtonase: getSp.overtonase,
+                        biaya_multi_drop: getSp.biaya_multi_drop,
+                        biaya_lain: getSp.biaya_lain,
+                        diskon: getSp.diskon,
+                        subtotal: getSp.subtotal,
+                        pajak: getSp.pajak,
+                        total_keseluruhan: getSp.total_keseluruhan,
+                        status: getSp.status,
+                        is_multi: getSp.is_multi,
+                        is_tarif_multidrop: getSp.is_tarif_multidrop,
+                        is_issue: getSp.is_issue,
+                        jenis_kiriman: getSp.jenis_kiriman,
+                        tgl_update: getSp.tgl_update ? core.moment(getSp.tgl_update).format('YYYY-MM-DD HH:mm:ss') : null,
+                        customer: getSp.customer ? {
+                            id_customer: getSp.customer.id_customer,
+                            nama_perusahaan: getSp.customer.nama_perusahaan,
+                            telepon: getSp.customer.telepon,
+                            email: getSp.customer.email
+                        } : null,
+                        sales: getSp.user ? {
+                            id: getSp.user.id,
+                            nama_lengkap: getSp.user.nama_lengkap,
+                            email: getSp.user.email
+                        } : null,
+                        details: getSp.m_pengadaan_details ? getSp.m_pengadaan_details.map((detail) => {
+                            // Parse template_name dari JSON
+                            let templateName = null;
+                            if (detail.m_produk && detail.m_produk.template_name) {
+                                try {
+                                    const templateNameJson = JSON.parse(detail.m_produk.template_name);
+                                    if (templateNameJson && templateNameJson.en_US && templateNameJson.en_US.trim() !== '') {
+                                        templateName = templateNameJson.en_US;
+                                    }
+                                } catch (e) {
+                                    // Jika bukan JSON, gunakan langsung
+                                    if (detail.m_produk.template_name.trim() !== '') {
+                                        templateName = detail.m_produk.template_name;
+                                    }
+                                }
+                            }
+                            
+                            return {
+                                id_mpd: detail.id_mpd,
+                                id_mp: detail.id_mp,
+                                ph: detail.ph,
+                                id_produk: detail.id_produk,
+                                nama_barang: detail.nama_barang,
+                                deskripsi: detail.nama_barang,
+                                qty: detail.qty,
+                                harga: detail.harga,
+                                jumlah: detail.jumlah,
+                                pajak: detail.pajak,
+                                total: detail.total,
+                                produk: detail.m_produk ? {
+                                    id: detail.m_produk.id,
+                                    template_name: templateName
+                                } : null
+                            };
+                        }) : [],
+                        status_order: getSp.m_status_order ? {
+                            id_mp: getSp.m_status_order.id_mp,
+                            customer: getSp.m_status_order.customer,
+                            act_customer: getSp.m_status_order.act_customer,
+                            tgl_act_1: getSp.m_status_order.tgl_act_1 ? core.moment(getSp.m_status_order.tgl_act_1).format('YYYY-MM-DD HH:mm:ss') : null,
+                            sales: getSp.m_status_order.sales,
+                            act_sales: getSp.m_status_order.act_sales,
+                            tgl_act_2: getSp.m_status_order.tgl_act_2 ? core.moment(getSp.m_status_order.tgl_act_2).format('YYYY-MM-DD HH:mm:ss') : null,
+                            akunting: getSp.m_status_order.akunting,
+                            act_akunting: getSp.m_status_order.act_akunting,
+                            tgl_act_3: getSp.m_status_order.tgl_act_3,
+                            operasional: getSp.m_status_order.operasional,
+                            kendaraan_operasional: getSp.m_status_order.kendaraan_operasional,
+                            tgl_act_4: getSp.m_status_order.tgl_act_4,
+                            purchasing: getSp.m_status_order.purchasing,
+                            tgl_act_5: getSp.m_status_order.tgl_act_5
+                        } : null,
+                        approval: getSp.m_pengadaan_approve ? {
+                            id_mp: getSp.m_pengadaan_approve.id_mp,
+                            apv_sales: getSp.m_pengadaan_approve.apv_sales,
+                            tgl_apv_sales: getSp.m_pengadaan_approve.tgl_apv_sales ? core.moment(getSp.m_pengadaan_approve.tgl_apv_sales).format('YYYY-MM-DD HH:mm:ss') : null,
+                            sales: getSp.m_pengadaan_approve.sales,
+                            apv_ops: getSp.m_pengadaan_approve.apv_ops,
+                            tgl_apv_ops: getSp.m_pengadaan_approve.tgl_apv_ops,
+                            operasional: getSp.m_pengadaan_approve.operasional,
+                            apv_akunting: getSp.m_pengadaan_approve.apv_akunting,
+                            tgl_apv_akt: getSp.m_pengadaan_approve.tgl_apv_akt,
+                            akunting: getSp.m_pengadaan_approve.akunting,
+                            apv_purch: getSp.m_pengadaan_approve.apv_purch,
+                            tgl_apv_purch: getSp.m_pengadaan_approve.tgl_apv_purch,
+                            purchasing: getSp.m_pengadaan_approve.purchasing
+                        } : null,
+                        chats: getSp.m_chats ? getSp.m_chats.map((chat) => ({
+                            id_chat: chat.id_chat,
+                            id_mp: chat.id_mp,
+                            user: chat.chat_user ? {
+                                id: chat.chat_user.id,
+                                nama_lengkap: chat.chat_user.nama_lengkap,
+                                email: chat.chat_user.email
+                            } : null,
+                            chat: chat.chat,
+                            tgl_chat: chat.tgl_chat ? core.moment(chat.tgl_chat).format('YYYY-MM-DD HH:mm:ss') : null,
+                            baca: chat.baca
+                        })) : []
+                    }
+                };
+            } else {
+                output = {
+                    status: {
+                        code: 404,
+                        message: 'SP not found'
+                    }
+                };
+            }
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        };
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req);
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output);
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
     }
 }
 
@@ -13371,6 +13778,15 @@ exports.getSpListAll2 = async (req, res) => {
                 }
             }
 
+            // Determine platform based on jenis_kiriman
+            let platform = "not_direct"; // default
+            const jenisKiriman = item.jenis_kiriman;
+            if (jenisKiriman === 'retail' || jenisKiriman === 'dedicated' || jenisKiriman === 'warehouse') {
+                platform = "direct";
+            } else if (jenisKiriman === 'oncall') {
+                platform = "not_direct";
+            }
+
             result.push({
                 no: startIndex + index,
                 idmp: item.id_mp,
@@ -13396,7 +13812,8 @@ exports.getSpListAll2 = async (req, res) => {
                 approvePurch: item.m_status_order?.kendaraan_purchasing,
                 dateApprovePurch: core.moment(item.m_status_order?.tgl_act_5).format('YYYY-MM-DD HH:mm:ss') == "1970-01-01 07:00:00" ? "Invalid Date" : core.moment(item.m_status_order?.tgl_act_5).format('YYYY-MM-DD HH:mm:ss'),
                 new: item.new,
-                destination: (kotaMuat == null || kotaMuat == "" ? "kota muat belum diinput" : kotaMuat) + " " + (kotaBongkar == null || kotaBongkar == "" ? "kota bongkar belum diinput" : kotaBongkar)
+                destination: (kotaMuat == null || kotaMuat == "" ? "kota muat belum diinput" : kotaMuat) + " " + (kotaBongkar == null || kotaBongkar == "" ? "kota bongkar belum diinput" : kotaBongkar),
+                platform: platform
             });
         }
 
