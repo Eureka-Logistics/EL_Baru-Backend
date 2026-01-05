@@ -257,6 +257,7 @@ var _m_po = require("./m_po");
 var _m_po_coment = require("./m_po_coment");
 var _m_po_detail = require("./m_po_detail");
 var _m_pool = require("./m_pool");
+var _m_produk = require("./m_produk");
 var _pool_activity_log = require("./pool_activity_log");
 var _m_promo = require("./m_promo");
 var _m_purch_invoice = require("./m_purch_invoice");
@@ -642,6 +643,7 @@ function initModels(sequelize) {
   var m_po_coment = _m_po_coment(sequelize, DataTypes);
   var m_po_detail = _m_po_detail(sequelize, DataTypes);
   var m_pool = _m_pool(sequelize, DataTypes);
+  var m_produk = _m_produk(sequelize, DataTypes);
   var pool_activity_log = _pool_activity_log(sequelize, DataTypes);
   var m_promo = _m_promo(sequelize, DataTypes);
   var m_purch_invoice = _m_purch_invoice(sequelize, DataTypes);
@@ -1054,6 +1056,7 @@ function initModels(sequelize) {
     m_po_coment,
     m_po_detail,
     m_pool,
+    m_produk,
     pool_activity_log,
     m_promo,
     m_purch_invoice,

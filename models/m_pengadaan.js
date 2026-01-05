@@ -302,6 +302,11 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: null
+    },
+    jenis_kiriman: {
+      type: DataTypes.ENUM('oncall', 'retail', 'dedicated', 'warehouse'),
+      allowNull: true,
+      defaultValue: 'oncall'
     }
   }, {
     sequelize,

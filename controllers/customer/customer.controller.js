@@ -300,6 +300,7 @@ exports.cretaCustomer = async (req, res) => {
                     const payload = {
                         parent_id: 0,
                         id_sales: getUser.id,
+                        id_bu: getUser.id_bu,
                         akun: "",
                         kode_customer: 'C' + getUser.id_bu + '0000001',
                         nama_perusahaan: val(req.body.nama_perusahaan, ''),
@@ -435,6 +436,7 @@ exports.cretaCustomer = async (req, res) => {
                         const payload2 = {
                             parent_id: 0,
                             id_sales: getUser.id,
+                            id_bu: getUser.id_bu,
                             akun: "",
                             kode_customer: 'C' + getUser.id_bu + zeroCode + codeUrut,
                             nama_perusahaan: val2(req.body.nama_perusahaan, ''),

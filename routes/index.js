@@ -65,6 +65,7 @@ router.use('/asm', require('./m_asm/m_asm.routes'));
 router.use('/mgr', require('./m_mgr/m_mgr.routes'));
 router.use('/cab', require('./m_cab/m_cab.routes'));
 router.use('/sales', require('./m_sales/m_sales.routes'));
+router.use('/produk', require('./m_produk/m_produk.routes'));
 router.use('/odoo', require('./odoo/odoo.routes'));
 
 
