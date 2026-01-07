@@ -3664,7 +3664,7 @@ exports.createSp_race = async (req, res) => {
                         'waktu_dropoff': "00:00:00",
                         'berat': 0,
                         'qty': detail.qty || 0,
-                        'koli': 0,
+                        'koli': detail.koli || 0,
                         'km': 0,
                         'ikat': 0,
                         'volume': 0,
@@ -3688,7 +3688,7 @@ exports.createSp_race = async (req, res) => {
                         'durasi_lelang': "00:00:00",
                         'harga_lelang': 0,
                         'id_price_customer': null,
-                        'keterangan': null,
+                        'keterangan': detail.deskripsi || null,
                         'cod_amount': 0,
                         'cod_input': null,
                         'pajak': detail.pajak || null,
@@ -13590,6 +13590,10 @@ exports.getSpListAll2 = async (req, res) => {
         models.m_pengadaan.belongsTo(models.m_status_order, { targetKey: 'id_mp', foreignKey: 'id_mp' });
         models.m_pengadaan.hasMany(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
         models.m_pengadaan_approve.belongsTo(models.users, { targetKey: 'id', foreignKey: 'sales' });
+        
+        if (!models.m_pengadaan.associations.salesData) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesData' });
+        }
 
         models.m_status_order.belongsTo(models.users, { targetKey: 'id', foreignKey: 'operasional' });
 
@@ -13609,9 +13613,29 @@ exports.getSpListAll2 = async (req, res) => {
         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_amd', as: 'amd' });
         // }
 
+        // Get user yang login untuk mendapatkan id_bu dan user_level
+        const getUser = await models.users.findOne({
+            where: { id: req.user.id },
+            attributes: ['id_bu', 'user_level', 'divisi']
+        });
+
+        // Cek apakah user adalah sales atau rcadmin
+        const isSalesOrRcadmin = getUser && (
+            getUser.user_level == 2 || 
+            getUser.divisi === 'Sales' || 
+            getUser.divisi === 'sales' ||
+            getUser.divisi === 'rcadmin' ||
+            getUser.divisi === 'RCADMIN' ||
+            getUser.divisi === 'Rcadmin'
+        );
+
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
 
         // Siapkan kondisi query dengan parameter yang dinamis
+        // Filter buId: hanya berlaku untuk divisi sales dan rcadmin
+        // Gunakan dari query parameter jika ada, jika tidak gunakan id_bu dari user yang login
+        const filterBuId = isSalesOrRcadmin ? (req.query.buId || (getUser && getUser.id_bu ? getUser.id_bu : null)) : null;
+        
         const queryConditions = {
             // tgl_order: {
             //     [Op.gte]: new Date(new Date().getFullYear(), 0, 1) // Default tahun ini
@@ -13622,13 +13646,57 @@ exports.getSpListAll2 = async (req, res) => {
             //         [Op.lt]: new Date((parseInt(req.query.tglSp) + 1) + '-01-01') // Awal tahun berikutnya
             //     }
             // }),
-            ...(req.query.buId ? {
+            // Filter: menampilkan data berdasarkan id_bu user yang login
+            // Hanya berlaku untuk divisi sales dan rcadmin
+            // Filter menggunakan LIKE pada field msp:
+            // - Jika id_bu = 11, maka HANYA msp LIKE '11-SO%' (tidak boleh 21-SO atau yang lain)
+            // - Jika id_bu = 21, maka msp LIKE '21-SO%' OR msp LIKE 'SP%'
+            // Untuk sales/rcadmin: juga filter berdasarkan id_bu di m_pengadaan dan id_bu dari user sales (hanya untuk data yang tidak mengikuti pola msp)
+            ...(isSalesOrRcadmin && filterBuId ? {
                 [Op.or]: [
-                    { id_bu: req.query.buId },
+                    // Filter berdasarkan format msp menggunakan LIKE
+                    // Jika id_bu = 11: HANYA msp LIKE '11-SO%'
+                    // Jika id_bu = 21: msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                    ...(parseInt(filterBuId) == 21 ? [
+                        { msp: { [Op.like]: `21-SO%` } },
+                        { msp: { [Op.like]: `SP%` } }
+                    ] : [
+                        { msp: { [Op.like]: `${filterBuId}-SO%` } }
+                    ]),
+                    // Untuk sales/rcadmin, juga cek id_bu di m_pengadaan dan id_bu dari user sales
+                    // Hanya untuk data yang tidak mengikuti pola XX-SO- atau SP-
+                    Sequelize.literal(`(
+                        m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                        AND m_pengadaan.msp NOT LIKE 'SP%'
+                    )`),
+                    Sequelize.literal(`(
+                        EXISTS (
+                            SELECT 1 FROM users 
+                            WHERE users.id = m_pengadaan.id_sales 
+                            AND users.id_bu = ${mysql.escape(filterBuId)}
+                        )
+                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                        AND m_pengadaan.msp NOT LIKE 'SP%'
+                    )`)
+                ]
+            } : {}),
+            // Filter codeBrench: filter berdasarkan code_bu_brench
+            // Mempertimbangkan: id_bu_branch di m_pengadaan ATAU code_bu_brench dari user sales
+            ...(req.query.codeBrench ? {
+                [Op.or]: [
+                    // Cek id_bu_branch di m_pengadaan langsung
                     Sequelize.literal(`EXISTS (
-                        SELECT 1 FROM users 
-                        WHERE users.id = m_pengadaan.id_sales 
-                        AND users.id_bu = ${mysql.escape(req.query.buId)}
+                        SELECT 1 FROM m_bu_brench b1
+                        WHERE b1.id_bu_brench = m_pengadaan.id_bu_branch 
+                        AND b1.code_bu_brench = ${mysql.escape(req.query.codeBrench)}
+                    )`),
+                    // Cek code_bu_brench dari user sales
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM users u
+                        INNER JOIN m_bu_brench b2 ON b2.id_bu_brench = u.id_bu_brench
+                        WHERE u.id = m_pengadaan.id_sales 
+                        AND b2.code_bu_brench = ${mysql.escape(req.query.codeBrench)}
                     )`)
                 ]
             } : {}),
@@ -13688,6 +13756,15 @@ exports.getSpListAll2 = async (req, res) => {
                         where: {
                             ...(req.query.codeBrench && { code_bu_brench: req.query.codeBrench })
                         }
+                    }
+                },
+                {
+                    model: models.m_sales,
+                    as: 'salesData',
+                    attributes: ['nama_sales'],
+                    required: false,
+                    where: {
+                        active: 'active'
                     }
                 },
                 { model: models.customer, required: false },
@@ -13787,11 +13864,19 @@ exports.getSpListAll2 = async (req, res) => {
                 platform = "not_direct";
             }
 
+            // Determine salesName: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+            let salesName = "-";
+            if (item.code_sales != null && item.code_sales !== "" && item.salesData != null) {
+                salesName = item.salesData.nama_sales || "-";
+            } else if (item.user != null) {
+                salesName = item.user.nama_lengkap || "-";
+            }
+
             result.push({
                 no: startIndex + index,
                 idmp: item.id_mp,
                 sp: item.msp,
-                salesName: item.user == null ? "-" : item.user.nama_lengkap,
+                salesName: salesName,
                 gl: "-",
                 asm: "-",
                 mgr: "-",
@@ -13991,7 +14076,7 @@ exports.getSpListAll2 = async (req, res) => {
 // };
 
 
-exports.getSpListAllDetail_vico = async (req, res) => {
+exports.getSpListAllDetail = async (req, res) => {
     try {
 
         models.m_pengadaan_detail.belongsTo(models.m_pengadaan, { targetKey: 'id_mp', foreignKey: 'id_mp' });
@@ -14002,19 +14087,19 @@ exports.getSpListAllDetail_vico = async (req, res) => {
         models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
         // models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
         models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
-        if (!models.users.associations.brench) {
-            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
-        }
         models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
-        if (!models.alamat.associations.m_wil_provinsi) {
-            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
-        }
         models.m_pengadaan_detail.belongsTo(models.kendaraan_jenis, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
         models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_tarif_customer', foreignKey: 'id_price_customer' });
 
         // models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_price_customer', foreignKey: 'id_price_customer' });
         // models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_muat_kota', foreignKey: 'id_tujuan_kota' });
 
+        if (!models.users.associations.brench) {
+            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
+        }
+        if (!models.alamat.associations.m_wil_provinsi) {
+            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
+        }
         if (!models.m_tarif_customer.associations.kotaAsal) {
             models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
         }
@@ -14254,7 +14339,8 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                 const noSpk = (getPengadaan.map((i) => i.mspk) != '' ? getPengadaan.map((i) => i.mspk) : getDetail.map((i) => i.m_pengadaan.mspk));
                 const noSp = (getPengadaan.map((i) => i.msp) != '' ? getPengadaan.map((i) => i.msp) : getDetail.map((i) => i.m_pengadaan.msp));
                 const memo = (getPengadaan.map((i) => i.memo) != '' ? getPengadaan.map((i) => i.memo) : getDetail.map((i) => i.m_pengadaan.memo));
-                const hargaTotal = (getPengadaan.map((i) => i.biaya_jalan) != '' ? getPengadaan.map((i) => i.biaya_jalan) : getPengadaan.map((i) => i.biaya_jalan));
+                // Ambil nilai pertama karena biaya_jalan sudah merupakan total dari semua detail, tidak perlu dijumlahkan
+                const hargaTotal = getPengadaan.length > 0 ? (getPengadaan[0].biaya_jalan || 0) : 0;
                 const melTotal = (getPengadaan.map((i) => i.biaya_mel) != '' ? getPengadaan.map((i) => i.biaya_mel) : getPengadaan.map((i) => i.biaya_mel));
                 const biayaLainTotal = (getPengadaan.map((i) => i.biaya_lain) != '' ? getPengadaan.map((i) => i.biaya_lain) : getPengadaan.map((i) => i.biaya_lain));
                 const biayaMultimuatTotal = (getPengadaan.map((i) => i.biaya_multi_muat) != '' ? getPengadaan.map((i) => i.biaya_multi_muat) : getPengadaan.map((i) => i.biaya_multi_muat));
@@ -14276,6 +14362,659 @@ exports.getSpListAllDetail_vico = async (req, res) => {
                 const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
 
                 const marketing = getPengadaan.map((i) => i.user.nama_lengkap == null ? "-" : i.user.nama_lengkap)
+                const getService = getPengadaan.map((i) => i.service)
+                const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
+                const customer = (getCustomer.map((i) => i.nama_perusahaan) != '' ? getCustomer.map((i) => i.nama_perusahaan) : getDetail.map((i) => i.m_pengadaan.customer.nama_perusahaan));
+                // MOU & Surat Pelayanan fields from customer
+                const mouFileArr = getCustomer.map((i) => i.mou_file);
+                const mouNumberArr = getCustomer.map((i) => i.mou_number);
+                const mouExpiredArr = getCustomer.map((i) => i.mou_expired ? core.moment(i.mou_expired).format('YYYY-MM-DD') : null);
+                const suratPelayananArr = getCustomer.map((i) => i.surat_pelayanan);
+                const suratPelayananNumberArr = getCustomer.map((i) => i.surat_pelayanan_number);
+                const suratPelayananExpiredArr = getCustomer.map((i) => i.surat_pelayanan_expired ? core.moment(i.surat_pelayanan_expired).format('YYYY-MM-DD') : null);
+                ///////TOTAL BIAYA\\\\\\\\\\\\\\\\
+                const total_muat = getDetail.map((i) => i.harga_muat)
+                const total_biayaMuatBongkar = getDetail.map((i) => i.harga_bongkar)
+                const total_overtonase = getDetail.map((i) => i.m_pengadaan.overtonase)
+                const total_biayaOvertonase = getPengadaan.map((i) => i.biaya_overtonase)
+                const total_biayaMultidrop = getPengadaan.map((i) => i.biaya_multi_drop)
+                const total_biayaLain = getDetail.map((i) => i.m_pengadaan.biaya_muat_bongkar)
+                const total_biayaLainDetail = getDetail.map((i) => i.biaya_lain || 0)
+                const total_diskon = getDetail.map((i) => i.m_pengadaan.diskon)
+                const total_keseluruhan = getDetail.map((i) => i.m_pengadaan.total_keseluruhan)
+                const kotaMuat = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaAsal.nama_kota)
+                const kotBongkar = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaTujuan.nama_kota)
+
+                const totalan = getPrice * getPriceBerat
+
+                // const kedaraanId = getDetail.map((i) => i.m_pengadaan.packing.jenis)
+                // const status = getDetail.map((i) => i.m_pengadaan.status == 1 ? "Aktif" : "Cancel")
+
+
+
+                const sumMuat = core.sumArray(total_muat)
+                const sumBongkar = core.sumArray(total_biayaMuatBongkar)
+                const sumOvertonase = total_biayaOvertonase
+                const sumMultidrop = total_biayaMultidrop
+                const sumBiayaLain = core.sumArray(total_biayaLain)
+                const sumBiayaMultiMuat = core.sumArray(biayaMultimuatTotal)
+                // const sumBongkar = core.sumArray(total_biayaMuatBongkar) 
+                const sumDiscont = core.sumArray(total_diskon)
+                const sumBerat = core.sumArray(getPriceBerat)
+                const sumMel = core.sumArray(melTotal)
+                const sumBiayaLa = core.sumArray(total_biayaLainDetail)
+                const sumHargaSelanjutnya = core.sumArray(hargaSelanjutnyaTotal)
+                // hargaTotal sudah merupakan nilai tunggal (bukan array), jadi langsung gunakan nilainya
+                const sumHarga = hargaTotal
+
+                // const getMuat = await models.alamat.findOne(
+
+                output = {
+                    status: {
+                        code: 200,
+                        message: 'Success get Data'
+                    },
+                    idmp: idmp[0],
+                    jenisBarang: jenisBarang[0],
+                    // packing: packing[0],
+                    asuransi: asuransi[0],
+                    // gl: getGl[0],
+                    // asm: getAsm[0],
+                    // mgr: getMgr[0],
+                    // kacab: getKacab[0],
+                    // amd: getAmd[0],
+
+                    gl: "-",
+                    asm: "-",
+                    mgr: "-",
+                    kacab: "-",
+                    amd: "-",
+                    // status: status[0],
+                    spk: noSpk[0],
+                    sp: noSp[0],
+                    marketing: marketing[0],
+                    service: service[0],
+                    order_date: orderDate[0],
+                    pickup_date: pickupDate[0],
+                    bongkar_date: bongkarDate[0],
+                    alamatInvoice: alamaInvoice[0],
+                    telpCustomer: telpCustomer[0],
+                    idcustomer: idcustomer[0],
+                    mou_file: mouFileArr[0],
+                    mou_number: mouNumberArr[0],
+                    mou_expired: mouExpiredArr[0],
+                    surat_pelayanan: suratPelayananArr[0],
+                    surat_pelayanan_number: suratPelayananNumberArr[0],
+                    surat_pelayanan_expired: suratPelayananExpiredArr[0],
+                    // kotaasal: kotaMuat[0],
+                    // kotaBongkar: kotBongkar[0],
+                    tarif: sumHarga,
+                    biayaLain: sumBiayaLa,
+                    biayaMel: sumMel,
+                    hargaSelanjutnya: sumHargaSelanjutnya,
+                    biayaMultiMuat: sumBiayaMultiMuat,
+                    biayaTambahan: (getPengadaan.map((i) => i.biaya_tambahan) != '' ? getPengadaan.map((i) => i.biaya_tambahan) : getPengadaan.map((i) => i.biaya_tambahan))[0],
+                    customer: customer[0],
+                    memo: memo[0],
+                    totalMuat: sumMuat,
+                    totalBongkar: sumBongkar,
+                    totalovertonase: sumOvertonase[0],
+                    biayaMultiDrop: sumMultidrop[0],
+                    // totalBiayaLain: sumBiayaLain,
+                    totalDiskon: sumDiscont,
+                    new: (getPengadaan.map((i) => i.new) != '' ? getPengadaan.map((i) => i.new) : getDetail.map((i) => i.m_pengadaan.new))[0],
+
+
+                    // subTotal: service[0] != "Charter" ? core.sumArray(getPrice) * core.sumArray(getPriceBerat) : core.sumArray(getPrice),
+                    Totalprice: sumDiscont == 0 && service[0] == "Charter" ? core.sumArray(getPrice) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain : service[0] != "Charter" ? (core.sumArray(getPrice) * core.sumArray(getPriceBerat) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain) : (core.sumArray(getPrice) * sumDiscont) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain,
+                    totalFix: getPengadaan.map((i) => i.total_keseluruhan)[0],
+                    alamatInvoiceList: getAlamatInvoice.map((ii) => {
+                        sumBiayaLain
+                        return {
+                            id: ii.npwp_id,
+                            npwp: ii.npwp,
+                            address_npwp: ii.address_npwp
+
+                        }
+                    }),
+
+
+                    detail: await Promise.all(getAlamat.map(async (i) => {
+                        const getPickup = await models.alamat.findOne(
+                            {
+                                where: {
+                                    id: i.id_almuat
+                                },
+                                include: [
+                                    {
+                                        model: models.m_wil_provinsi,
+                                        attributes: ['nama_provinsi'],
+                                        required: false
+                                    }
+                                ]
+                            }
+                        );
+
+                        const getTujuan = await models.m_pengadaan_detail.findAll(
+                            {
+                                where: {
+                                    id_mp: idmp[0],
+                                    id_almuat: i.id_almuat
+                                }
+                            }
+                        );
+
+                        const getKendaraan = await models.kendaraan.findOne(
+                            {
+                                where: {
+                                    id: i.id_unit
+                                }
+                            }
+                        )
+                        const getDriver = await models.m_driver.findOne(
+                            {
+                                where: {
+                                    id: i.id_supir
+                                }
+                            }
+                        )
+                        return {
+                            idmpd: i.id_mpd,
+                            pickupId: getPickup == null ? "" : getPickup.id,
+                            pickup: getPickup == null ? "-" : getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
+                            idKendaraan: getKendaraan == null ? "" : getKendaraan.id,
+                            nopol: getKendaraan == null ? "" : getKendaraan.no_polisi,
+                            driver: getDriver == null ? "" : getDriver.nama,
+                            noTelp: getDriver == null ? "" : getDriver.no_telp,
+
+                            tujuan: await Promise.all(getTujuan.map(async (ii) => {
+                                const getBongkar = await models.alamat.findOne(
+                                    {
+                                        where: {
+                                            id: ii.id_albongkar
+                                        },
+                                        include: [
+                                            {
+                                                model: models.m_wil_provinsi,
+                                                attributes: ['nama_provinsi'],
+                                                required: false
+                                            }
+                                        ]
+                                    }
+                                );
+
+                                const getTarif = await models.m_tarif_customer.findOne(
+                                    {
+                                        where: {
+                                            id_tarif_customer: ii.id_price_customer
+                                        }
+                                    }
+                                );
+
+                                const getSJ = await models.m_sm.findOne(
+                                    {
+                                        where: {
+                                            id_mpd: ii.id_mpd
+                                        }
+                                    }
+                                );
+                                // res.send(getSJ)
+                                const getShipment = await models.m_shipment.findOne(
+                                    {
+                                        where: {
+                                            id: ii.shipment
+                                        }
+                                    }
+                                )
+                                const getKendaraanJenis = await models.kendaraan_jenis.findOne(
+                                    {
+                                        where: {
+                                            nama_kendaraan_jenis: ii.kendaraan,
+                                        }
+                                    }
+                                )
+
+                                const getMitra1 = getSJ ? await models.mitra.findOne(
+                                    { 
+                                        where: { id_mitra: getSJ.id_mitra_pickup } 
+                                    }
+                                ) : null;
+                                
+                                const getMitra2 = getSJ ? await models.mitra.findOne(
+                                    { 
+                                        where: { id_mitra: getSJ.id_mitra } 
+                                    }
+                                ) : null;
+                                
+                                const getMitra3 = getSJ ? await models.mitra.findOne(
+                                    { 
+                                        where: { id_mitra: getSJ.id_mitra_2 } 
+                                    }
+                                ) : null;
+
+
+                                return {
+                                    idmpd: ii.id_mpd,
+                                    noSJ: getSJ?.msm,
+                                    supirSJ1: getSJ == null ? "-" : getSJ.id_driver,
+                                    supirSJ2: getSJ == null ? "-" : getSJ.id_driver_2,
+                                    supir1: getSJ?.pickup_supir || "-",
+                                    supir2: getSJ?.supir || "-",
+                                    supir3: getSJ?.supir_2 || "-",
+                                    mitraSJ1: getSJ == null ? "-" : getSJ.id_mitra_pickup,
+                                    mitraSJ2: getSJ == null ? "-" : getSJ.id_mitra,
+                                    mitraSJ3: getSJ == null ? "-" : getSJ.id_mitra_2,
+                                    mitra1: getMitra1?.nama_mitra || "-",
+                                    mitra2: getMitra2?.nama_mitra || "-",
+                                    mitra3: getMitra3?.nama_mitra || "-",
+                                    kendaraan1: getSJ?.pickup_kendaraan || "-",
+                                    kendaraan2: getSJ?.kendaraan || "-",
+                                    kendaraan3: getSJ?.kendaraan_2 || "-",
+                                    nopol1: getSJ?.pickup_nopol || "-",
+                                    nopol2: getSJ?.nopol || "-",
+                                    nopol3: getSJ?.nopol_2 || "-",
+                                    kendaraanJenisId: getKendaraanJenis == null ? "" : getKendaraanJenis.id_kendaraan_jenis,
+                                    kendaraan: ii.kendaraan,
+                                    service: getService,
+                                    pickupId: getPickup?.id,
+                                    pickup: getPickup?.alamat,
+                                    destinationId: getBongkar?.id,
+                                    destination: getBongkar?.alamat,
+                                    via: ii.via,
+                                    shipmentID: ii.shipment,
+                                    shipmentName: getShipment == null ? "-" : getShipment.shipment,
+                                    id_kota_muat: ii?.id_kota_muat,
+                                    id_kota_bongkar: ii?.id_kota_bongkar,
+                                    item: ii.nama_barang,
+                                    qty: ii.qty,
+                                    koli: ii.koli,
+                                    berat: ii.berat,
+                                    ikat: ii.ikat,
+                                    Price: ii.harga,
+                                    biayaLain: ii.biaya_lain,
+                                    biayaMel: ii.biaya_mel,
+                                    harga_type: ii.harga_type,
+                                    biaya_multi_drop: ii.biaya_multidrop,
+                                    max_tonase: ii.max_tonase,
+                                    biaya_overtonase: ii.biaya_overtonase,
+                                    harga_selanjutnya: ii.harga_selanjutnya,
+                                    biaya_tambahan: ii.biaya_tambahan,
+                                    biaya_multimuat: ii.biaya_multimuat,
+                                    // harga: ii.harga,
+                                    harga_muat: ii.harga_muat,
+                                    harga_bongkar: ii.harga_bongkar,
+                                    diskon: ii.diskon,
+                                    unitId: ii.id_unit,
+                                    supirId: ii.id_supir,
+                                    total: ii.total,
+                                    totalBiayaRetail: (ii.harga * ii.berat) + ii.harga_bongkar + ii.harga_muat,
+                                    totalBiayaCharter: ii.harga + ii.harga_bongkar + ii.harga_muat,
+                                    biaya_jalan: getTarif?.biaya_jalan,
+
+                                    // supirSM2:ii.m_sm.id_unit_2 == null ?"-":ii.m_sm.id_unit_2,
+
+                                }
+
+                            })),
+
+
+                            // destination: getBongkar.alamat,
+                            // via: i.via,
+                            // item: i.nama_barang,
+                            // qty: i.qty,
+                            // berat: i.berat,  
+                            // Price: i.harga,
+                            // harga_type: i.harga_type,
+                            // harga: i.harga,
+                            // harga_muat: i.harga_muat,
+                            // harga_bongkar: i.harga_bongkar,
+                            // diskon: i.diskon,
+                            // total: i.total
+
+                        }
+
+
+
+                    })),
+                    // const totalSemua = results.reduce((total, item) => total + item.total, 0);
+
+
+                }
+
+            }
+        }
+
+
+
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+exports.getSpListAllDetail_vico = async (req, res) => {
+    try {
+
+        models.m_pengadaan_detail.belongsTo(models.m_pengadaan, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        models.m_pengadaan_detail.belongsTo(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
+
+        models.m_pengadaan_detail.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_almuat' });
+        models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
+        models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
+        // models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
+        models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
+        if (!models.users.associations.brench) {
+            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
+        }
+        if (!models.m_pengadaan.associations.salesDataVico) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataVico' });
+        }
+        models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
+        if (!models.alamat.associations.m_wil_provinsi) {
+            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
+        }
+        models.m_pengadaan_detail.belongsTo(models.kendaraan_jenis, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
+        models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_tarif_customer', foreignKey: 'id_price_customer' });
+
+        // models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_price_customer', foreignKey: 'id_price_customer' });
+        // models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_muat_kota', foreignKey: 'id_tujuan_kota' });
+
+        if (!models.m_tarif_customer.associations.kotaAsal) {
+            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
+        }
+        if (!models.m_tarif_customer.associations.kotaTujuan) {
+            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_tujuan_kota', as: 'kotaTujuan' });
+        }
+        // if (!models.m_pengadaan.associations.gl) {
+        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_gl', as: 'gl' });
+        // }
+        // if (!models.m_pengadaan.associations.asm) {
+        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_asm', as: 'asm' });
+        // }
+        // if (!models.m_pengadaan.associations.mgr) {
+        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_mgr', as: 'mgr' });
+        // }
+        // if (!models.m_pengadaan.associations.kacab) {
+        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_kacab', as: 'kacab' });
+        // }
+        // if (!models.m_pengadaan.associations.amd) {
+        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_amd', as: 'amd' });
+        // }
+
+
+        // models.m_pengadaan_detail.belongsTo(models.kendaraan, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
+
+
+
+
+
+
+        const getUser = await models.users.findOne(
+            {
+                id: req.user.id
+            }
+        )
+        if (getUser) {
+            const getDetail = await models.m_pengadaan_detail.findAll(
+                {
+                    where: {
+                        id_mp: req.query.idmp
+                    },
+                    group: ['id_mpd'],
+                    include: [
+                        {
+                            model: models.m_pengadaan,
+                            required: false,
+                            include:
+                                [
+                                    {
+                                        model: models.customer,
+                                        include: [
+                                            {
+                                                model: models.alamat
+                                            },
+
+                                        ]
+                                    },
+                                    {
+                                        model: models.users,
+                                        include: [
+                                            {
+                                                model: models.m_bu_brench,
+                                                as: 'brench',
+                                                attributes: ['wilayah'],
+                                                required: false
+                                            }
+                                        ]
+                                    },
+                                    // {
+                                    //     model: models.m_bu_employee,
+                                    //     as: 'gl',
+                                    //     attributes: ['fullname']
+                                    // },
+                                    // {
+                                    //     model: models.m_bu_employee,
+                                    //     as: 'asm',
+                                    //     attributes: ['fullname']
+                                    // },
+                                    // {
+                                    //     model: models.m_bu_employee,
+                                    //     as: 'mgr',
+                                    //     attributes: ['fullname']
+
+                                    // },
+                                    // {
+                                    //     model: models.m_bu_employee,
+                                    //     as: 'kacab',
+                                    //     attributes: ['fullname']
+
+                                    // },
+                                    // {
+                                    //     model: models.m_bu_employee,
+                                    //     as: 'amd',
+                                    //     attributes: ['fullname']
+
+                                    // },
+                                ]
+
+                        },
+                        {
+                            model: models.m_sm,
+                            // required: false
+                        },
+                        {
+                            model: models.alamat,
+                            required: true
+                        },
+                        {
+                            model: models.kendaraan_jenis,
+                            // required: false
+                        },
+                        {
+                            model: models.m_tarif_customer,
+                            include: [
+                                {
+                                    model: models.m_wil_kota,
+                                    as: 'kotaAsal'
+                                },
+                                {
+                                    model: models.m_wil_kota,
+                                    as: 'kotaTujuan'
+                                },
+                            ]
+                        }
+                    ]
+                }
+            )
+
+
+
+
+            // const getMuat = await models.alamat.findOne(
+            //     {
+            //         where: {
+            //             id: req.query.idMuat
+            //         },
+            //         attributes: ['kota']
+            //     }
+            // )
+            // const getBongkar = await models.alamat.findOne(
+            //     {
+            //         where: {
+            //             id: req.query.idBongkar
+            //         },
+            //         attributes: ['kota']
+            //     }
+
+
+            // )
+            // console.log("🚀 ~ file: sp.controller.js:188 ~ exports.getSpDetail= ~ getDetail:", getDetail.id_almuat)
+            const getPengadaan = await models.m_pengadaan.findAll(
+                {
+                    where: {
+                        id_mp: req.query.idmp
+                    },
+                    include: [
+                        {
+                            model: models.users,
+                            include: [
+                                {
+                                    model: models.m_bu_brench,
+                                    as: 'brench',
+                                    attributes: ['wilayah'],
+                                    required: false
+                                }
+                            ]
+                        },
+                        {
+                            model: models.m_sales,
+                            as: 'salesDataVico',
+                            attributes: ['nama_sales'],
+                            required: false
+                        },
+                        // {
+                        //     model: models.m_bu_employee,
+                        //     as: 'gl',
+                        //     attributes: ['fullname']
+                        // },
+                        // {
+                        //     model: models.m_bu_employee,
+                        //     as: 'asm',
+                        //     attributes: ['fullname']
+                        // },
+                        // {
+                        //     model: models.m_bu_employee,
+                        //     as: 'mgr',
+                        //     attributes: ['fullname']
+
+                        // },
+                        // {
+                        //     model: models.m_bu_employee,
+                        //     as: 'kacab',
+                        //     attributes: ['fullname']
+
+                        // },
+                        // {
+                        //     model: models.m_bu_employee,
+                        //     as: 'amd',
+                        //     attributes: ['fullname']
+
+                        // },
+
+                    ]
+                }
+            )
+            const getAlamat = await models.m_pengadaan_detail.findAll(
+                {
+                    group: ['id_almuat'],
+                    where: {
+                        id_mp: req.query.idmp
+                    }
+                }
+            )
+
+            const idcustomer = getPengadaan.map((i) => i.id_customer)
+
+            const getCustomer = await models.customer.findAll(
+                {
+                    where: {
+                        id_customer: idcustomer
+                    }
+                }
+            )
+
+            const getAlamatInvoice = await models.customer_npwp.findAll(
+                {
+                    where: {
+                        customer_id: idcustomer
+                    }
+
+
+                }
+            )
+
+
+            if (getDetail) {
+                const getPrice = getDetail.map((i) => i.harga)
+                const getPriceBerat = getDetail.map((i) => i.berat)
+                // console.log("🚀 ~ file: sp.controller.js:4990 ~ exports.getSpListAllDetail= ~ getPrice:", getPrice)
+                // const getSubPrice = getDetail.map((i) => i.harga[0])
+                const idmp = (getPengadaan.map((i) => i.id_mp) != '' ? getPengadaan.map((i) => i.id_mp) : getDetail.map((i) => i.m_pengadaan.id_mp));
+                const noSpk = (getPengadaan.map((i) => i.mspk) != '' ? getPengadaan.map((i) => i.mspk) : getDetail.map((i) => i.m_pengadaan.mspk));
+                const noSp = (getPengadaan.map((i) => i.msp) != '' ? getPengadaan.map((i) => i.msp) : getDetail.map((i) => i.m_pengadaan.msp));
+                const memo = (getPengadaan.map((i) => i.memo) != '' ? getPengadaan.map((i) => i.memo) : getDetail.map((i) => i.m_pengadaan.memo));
+                const hargaTotal = (getPengadaan.map((i) => i.biaya_jalan) != '' ? getPengadaan.map((i) => i.biaya_jalan) : getPengadaan.map((i) => i.biaya_jalan));
+                const melTotal = (getPengadaan.map((i) => i.biaya_mel) != '' ? getPengadaan.map((i) => i.biaya_mel) : getPengadaan.map((i) => i.biaya_mel));
+                const biayaLainTotal = (getPengadaan.map((i) => i.biaya_lain) != '' ? getPengadaan.map((i) => i.biaya_lain) : getPengadaan.map((i) => i.biaya_lain));
+                const biayaMultimuatTotal = (getPengadaan.map((i) => i.biaya_multi_muat) != '' ? getPengadaan.map((i) => i.biaya_multi_muat) : getPengadaan.map((i) => i.biaya_multi_muat));
+                const hargaSelanjutnyaTotal = (getPengadaan.map((i) => i.harga_selanjutnya) != '' ? getPengadaan.map((i) => i.harga_selanjutnya) : getPengadaan.map((i) => i.harga_selanjutnya));
+                const service = (getPengadaan.map((i) => i.service) != '' ? getPengadaan.map((i) => i.service) : getDetail.map((i) => i.m_pengadaan.service));
+
+                const orderDate = (getPengadaan.map((i) => i.tgl_order) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_order).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_order).format("DD-MM-YYYY HH:mm:ss")));
+                const pickupDate = (getPengadaan.map((i) => i.tgl_pickup) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")));
+                const bongkarDate = (getDetail.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getDetail.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : '-')
+                const jenisBarang = (getPengadaan.map((i) => i.jenis_barang) != '' ? getPengadaan.map((i) => i.jenis_barang) : getDetail.map((i) => i.m_pengadaan.jenis_barang));
+                const asuransi = (getPengadaan.map((i) => i.asuransi) != '' ? getPengadaan.map((i) => i.asuransi) : getDetail.map((i) => i.m_pengadaan.asuransi));
+                const getGl = getDetail.map((i) => i.m_pengadaan.gl == null ? "-" : i.m_pengadaan.fullname)
+                const getAsm = getDetail.map((i) => i.m_pengadaan.asm == null ? "-" : i.m_pengadaan.asm.fullname)
+                const getMgr = getDetail.map((i) => i.m_pengadaan.mgr == null ? "-" : i.m_pengadaan.mgr.fullname)
+                const getKacab = getDetail.map((i) => i.m_pengadaan.kacab == null ? "-" : i.m_pengadaan.kacab.fullname)
+                const getAmd = getDetail.map((i) => i.m_pengadaan.amd == null ? "-" : i.m_pengadaan.amd.fullname)
+
+
+                const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
+
+                // Determine marketing: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+                const marketing = getPengadaan.map((i) => {
+                    // Cek apakah code_sales ada dan tidak kosong
+                    const hasCodeSales = i.code_sales != null && i.code_sales !== "" && String(i.code_sales).trim() !== "";
+                    
+                    if (hasCodeSales && i.salesDataVico != null && i.salesDataVico.nama_sales) {
+                        // Jika code_sales ada, ambil dari m_sales
+                        return i.salesDataVico.nama_sales;
+                    } else {
+                        // Jika code_sales null atau empty, ambil dari users
+                        if (i.user != null && i.user.nama_lengkap) {
+                            return i.user.nama_lengkap;
+                        }
+                        if (i.users != null && i.users.nama_lengkap) {
+                            return i.users.nama_lengkap;
+                        }
+                        return "-";
+                    }
+                })
                 const branch = getPengadaan.map((i) => i.user?.brench?.wilayah || "-")
                 const getService = getPengadaan.map((i) => i.service)
                 const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
@@ -14748,1207 +15487,6 @@ exports.updateIdOddo = async (req, res) => {
     }
 }
 
-exports.getSpListAllDetail = async (req, res) => {
-    try {
-
-        models.m_pengadaan_detail.belongsTo(models.m_pengadaan, { targetKey: 'id_mp', foreignKey: 'id_mp' });
-        models.m_pengadaan_detail.belongsTo(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
-
-        models.m_pengadaan_detail.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_almuat' });
-        models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
-        models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
-        // models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
-        models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
-        models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
-        models.m_pengadaan_detail.belongsTo(models.kendaraan_jenis, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
-        models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_tarif_customer', foreignKey: 'id_price_customer' });
-
-        // models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_price_customer', foreignKey: 'id_price_customer' });
-        // models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_muat_kota', foreignKey: 'id_tujuan_kota' });
-
-        if (!models.users.associations.brench) {
-            models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
-        }
-        if (!models.alamat.associations.m_wil_provinsi) {
-            models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
-        }
-        if (!models.m_tarif_customer.associations.kotaAsal) {
-            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
-        }
-        if (!models.m_tarif_customer.associations.kotaTujuan) {
-            models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_tujuan_kota', as: 'kotaTujuan' });
-        }
-        // if (!models.m_pengadaan.associations.gl) {
-        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_gl', as: 'gl' });
-        // }
-        // if (!models.m_pengadaan.associations.asm) {
-        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_asm', as: 'asm' });
-        // }
-        // if (!models.m_pengadaan.associations.mgr) {
-        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_mgr', as: 'mgr' });
-        // }
-        // if (!models.m_pengadaan.associations.kacab) {
-        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_kacab', as: 'kacab' });
-        // }
-        // if (!models.m_pengadaan.associations.amd) {
-        //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_amd', as: 'amd' });
-        // }
-
-
-        // models.m_pengadaan_detail.belongsTo(models.kendaraan, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
-
-
-
-
-
-
-        const getUser = await models.users.findOne(
-            {
-                id: req.user.id
-            }
-        )
-        if (getUser) {
-            const getDetail = await models.m_pengadaan_detail.findAll(
-                {
-                    where: {
-                        id_mp: req.query.idmp
-                    },
-                    group: ['id_mpd'],
-                    include: [
-                        {
-                            model: models.m_pengadaan,
-                            required: false,
-                            include:
-                                [
-                                    {
-                                        model: models.customer,
-                                        include: [
-                                            {
-                                                model: models.alamat
-                                            },
-
-                                        ]
-                                    },
-                                    {
-                                        model: models.users,
-                                        include: [
-                                            {
-                                                model: models.m_bu_brench,
-                                                as: 'brench',
-                                                attributes: ['wilayah'],
-                                                required: false
-                                            }
-                                        ]
-                                    },
-                                    // {
-                                    //     model: models.m_bu_employee,
-                                    //     as: 'gl',
-                                    //     attributes: ['fullname']
-                                    // },
-                                    // {
-                                    //     model: models.m_bu_employee,
-                                    //     as: 'asm',
-                                    //     attributes: ['fullname']
-                                    // },
-                                    // {
-                                    //     model: models.m_bu_employee,
-                                    //     as: 'mgr',
-                                    //     attributes: ['fullname']
-
-                                    // },
-                                    // {
-                                    //     model: models.m_bu_employee,
-                                    //     as: 'kacab',
-                                    //     attributes: ['fullname']
-
-                                    // },
-                                    // {
-                                    //     model: models.m_bu_employee,
-                                    //     as: 'amd',
-                                    //     attributes: ['fullname']
-
-                                    // },
-                                ]
-
-                        },
-                        {
-                            model: models.m_sm,
-                            // required: false
-                        },
-                        {
-                            model: models.alamat,
-                            required: true
-                        },
-                        {
-                            model: models.kendaraan_jenis,
-                            // required: false
-                        },
-                        {
-                            model: models.m_tarif_customer,
-                            include: [
-                                {
-                                    model: models.m_wil_kota,
-                                    as: 'kotaAsal'
-                                },
-                                {
-                                    model: models.m_wil_kota,
-                                    as: 'kotaTujuan'
-                                },
-                            ]
-                        }
-                    ]
-                }
-            )
-
-
-
-
-            // const getMuat = await models.alamat.findOne(
-            //     {
-            //         where: {
-            //             id: req.query.idMuat
-            //         },
-            //         attributes: ['kota']
-            //     }
-            // )
-            // const getBongkar = await models.alamat.findOne(
-            //     {
-            //         where: {
-            //             id: req.query.idBongkar
-            //         },
-            //         attributes: ['kota']
-            //     }
-
-
-            // )
-            // console.log("🚀 ~ file: sp.controller.js:188 ~ exports.getSpDetail= ~ getDetail:", getDetail.id_almuat)
-            const getPengadaan = await models.m_pengadaan.findAll(
-                {
-                    where: {
-                        id_mp: req.query.idmp
-                    },
-                    include: [
-                        {
-                            model: models.users,
-                            include: [
-                                {
-                                    model: models.m_bu_brench,
-                                    as: 'brench',
-                                    attributes: ['wilayah'],
-                                    required: false
-                                }
-                            ]
-                        },
-
-                        // {
-                        //     model: models.m_bu_employee,
-                        //     as: 'gl',
-                        //     attributes: ['fullname']
-                        // },
-                        // {
-                        //     model: models.m_bu_employee,
-                        //     as: 'asm',
-                        //     attributes: ['fullname']
-                        // },
-                        // {
-                        //     model: models.m_bu_employee,
-                        //     as: 'mgr',
-                        //     attributes: ['fullname']
-
-                        // },
-                        // {
-                        //     model: models.m_bu_employee,
-                        //     as: 'kacab',
-                        //     attributes: ['fullname']
-
-                        // },
-                        // {
-                        //     model: models.m_bu_employee,
-                        //     as: 'amd',
-                        //     attributes: ['fullname']
-
-                        // },
-
-                    ]
-                }
-            )
-            const getAlamat = await models.m_pengadaan_detail.findAll(
-                {
-                    group: ['id_almuat'],
-                    where: {
-                        id_mp: req.query.idmp
-                    }
-                }
-            )
-
-            const idcustomer = getPengadaan.map((i) => i.id_customer)
-
-            const getCustomer = await models.customer.findAll(
-                {
-                    where: {
-                        id_customer: idcustomer
-                    }
-                }
-            )
-
-            const getAlamatInvoice = await models.customer_npwp.findAll(
-                {
-                    where: {
-                        customer_id: idcustomer
-                    }
-
-
-                }
-            )
-
-
-            if (getDetail) {
-                const getPrice = getDetail.map((i) => i.harga)
-                const getPriceBerat = getDetail.map((i) => i.berat)
-                // console.log("🚀 ~ file: sp.controller.js:4990 ~ exports.getSpListAllDetail= ~ getPrice:", getPrice)
-                // const getSubPrice = getDetail.map((i) => i.harga[0])
-                const idmp = (getPengadaan.map((i) => i.id_mp) != '' ? getPengadaan.map((i) => i.id_mp) : getDetail.map((i) => i.m_pengadaan.id_mp));
-                const noSpk = (getPengadaan.map((i) => i.mspk) != '' ? getPengadaan.map((i) => i.mspk) : getDetail.map((i) => i.m_pengadaan.mspk));
-                const noSp = (getPengadaan.map((i) => i.msp) != '' ? getPengadaan.map((i) => i.msp) : getDetail.map((i) => i.m_pengadaan.msp));
-                const memo = (getPengadaan.map((i) => i.memo) != '' ? getPengadaan.map((i) => i.memo) : getDetail.map((i) => i.m_pengadaan.memo));
-                // Ambil nilai pertama karena biaya_jalan sudah merupakan total dari semua detail, tidak perlu dijumlahkan
-                const hargaTotal = getPengadaan.length > 0 ? (getPengadaan[0].biaya_jalan || 0) : 0;
-                const melTotal = (getPengadaan.map((i) => i.biaya_mel) != '' ? getPengadaan.map((i) => i.biaya_mel) : getPengadaan.map((i) => i.biaya_mel));
-                const biayaLainTotal = (getPengadaan.map((i) => i.biaya_lain) != '' ? getPengadaan.map((i) => i.biaya_lain) : getPengadaan.map((i) => i.biaya_lain));
-                const biayaMultimuatTotal = (getPengadaan.map((i) => i.biaya_multi_muat) != '' ? getPengadaan.map((i) => i.biaya_multi_muat) : getPengadaan.map((i) => i.biaya_multi_muat));
-                const hargaSelanjutnyaTotal = (getPengadaan.map((i) => i.harga_selanjutnya) != '' ? getPengadaan.map((i) => i.harga_selanjutnya) : getPengadaan.map((i) => i.harga_selanjutnya));
-                const service = (getPengadaan.map((i) => i.service) != '' ? getPengadaan.map((i) => i.service) : getDetail.map((i) => i.m_pengadaan.service));
-
-                const orderDate = (getPengadaan.map((i) => i.tgl_order) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_order).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_order).format("DD-MM-YYYY HH:mm:ss")));
-                const pickupDate = (getPengadaan.map((i) => i.tgl_pickup) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")));
-                const bongkarDate = (getDetail.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getDetail.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : '-')
-                const jenisBarang = (getPengadaan.map((i) => i.jenis_barang) != '' ? getPengadaan.map((i) => i.jenis_barang) : getDetail.map((i) => i.m_pengadaan.jenis_barang));
-                const asuransi = (getPengadaan.map((i) => i.asuransi) != '' ? getPengadaan.map((i) => i.asuransi) : getDetail.map((i) => i.m_pengadaan.asuransi));
-                const getGl = getDetail.map((i) => i.m_pengadaan.gl == null ? "-" : i.m_pengadaan.fullname)
-                const getAsm = getDetail.map((i) => i.m_pengadaan.asm == null ? "-" : i.m_pengadaan.asm.fullname)
-                const getMgr = getDetail.map((i) => i.m_pengadaan.mgr == null ? "-" : i.m_pengadaan.mgr.fullname)
-                const getKacab = getDetail.map((i) => i.m_pengadaan.kacab == null ? "-" : i.m_pengadaan.kacab.fullname)
-                const getAmd = getDetail.map((i) => i.m_pengadaan.amd == null ? "-" : i.m_pengadaan.amd.fullname)
-
-
-                const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
-
-                const marketing = getPengadaan.map((i) => i.user.nama_lengkap == null ? "-" : i.user.nama_lengkap)
-                const getService = getPengadaan.map((i) => i.service)
-                const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
-                const customer = (getCustomer.map((i) => i.nama_perusahaan) != '' ? getCustomer.map((i) => i.nama_perusahaan) : getDetail.map((i) => i.m_pengadaan.customer.nama_perusahaan));
-                // MOU & Surat Pelayanan fields from customer
-                const mouFileArr = getCustomer.map((i) => i.mou_file);
-                const mouNumberArr = getCustomer.map((i) => i.mou_number);
-                const mouExpiredArr = getCustomer.map((i) => i.mou_expired ? core.moment(i.mou_expired).format('YYYY-MM-DD') : null);
-                const suratPelayananArr = getCustomer.map((i) => i.surat_pelayanan);
-                const suratPelayananNumberArr = getCustomer.map((i) => i.surat_pelayanan_number);
-                const suratPelayananExpiredArr = getCustomer.map((i) => i.surat_pelayanan_expired ? core.moment(i.surat_pelayanan_expired).format('YYYY-MM-DD') : null);
-                ///////TOTAL BIAYA\\\\\\\\\\\\\\\\
-                const total_muat = getDetail.map((i) => i.harga_muat)
-                const total_biayaMuatBongkar = getDetail.map((i) => i.harga_bongkar)
-                const total_overtonase = getDetail.map((i) => i.m_pengadaan.overtonase)
-                const total_biayaOvertonase = getPengadaan.map((i) => i.biaya_overtonase)
-                const total_biayaMultidrop = getPengadaan.map((i) => i.biaya_multi_drop)
-                const total_biayaLain = getDetail.map((i) => i.m_pengadaan.biaya_muat_bongkar)
-                const total_diskon = getDetail.map((i) => i.m_pengadaan.diskon)
-                const total_keseluruhan = getDetail.map((i) => i.m_pengadaan.total_keseluruhan)
-                const kotaMuat = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaAsal.nama_kota)
-                const kotBongkar = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaTujuan.nama_kota)
-
-                const totalan = getPrice * getPriceBerat
-
-                // const kedaraanId = getDetail.map((i) => i.m_pengadaan.packing.jenis)
-                // const status = getDetail.map((i) => i.m_pengadaan.status == 1 ? "Aktif" : "Cancel")
-
-
-
-                const sumMuat = core.sumArray(total_muat)
-                const sumBongkar = core.sumArray(total_biayaMuatBongkar)
-                const sumOvertonase = total_biayaOvertonase
-                const sumMultidrop = total_biayaMultidrop
-                const sumBiayaLain = core.sumArray(total_biayaLain)
-                const sumBiayaMultiMuat = core.sumArray(biayaMultimuatTotal)
-                // const sumBongkar = core.sumArray(total_biayaMuatBongkar) 
-                const sumDiscont = core.sumArray(total_diskon)
-                const sumBerat = core.sumArray(getPriceBerat)
-                const sumMel = core.sumArray(melTotal)
-                const sumBiayaLa = core.sumArray(biayaLainTotal)
-                const sumHargaSelanjutnya = core.sumArray(hargaSelanjutnyaTotal)
-                // hargaTotal sudah merupakan nilai tunggal (bukan array), jadi langsung gunakan nilainya
-                const sumHarga = hargaTotal
-
-                // const getMuat = await models.alamat.findOne(
-
-                output = {
-                    status: {
-                        code: 200,
-                        message: 'Success get Data'
-                    },
-                    idmp: idmp[0],
-                    jenisBarang: jenisBarang[0],
-                    // packing: packing[0],
-                    asuransi: asuransi[0],
-                    // gl: getGl[0],
-                    // asm: getAsm[0],
-                    // mgr: getMgr[0],
-                    // kacab: getKacab[0],
-                    // amd: getAmd[0],
-
-                    gl: "-",
-                    asm: "-",
-                    mgr: "-",
-                    kacab: "-",
-                    amd: "-",
-                    // status: status[0],
-                    spk: noSpk[0],
-                    sp: noSp[0],
-                    marketing: marketing[0],
-                    service: service[0],
-                    order_date: orderDate[0],
-                    pickup_date: pickupDate[0],
-                    bongkar_date: bongkarDate[0],
-                    alamatInvoice: alamaInvoice[0],
-                    telpCustomer: telpCustomer[0],
-                    idcustomer: idcustomer[0],
-                    mou_file: mouFileArr[0],
-                    mou_number: mouNumberArr[0],
-                    mou_expired: mouExpiredArr[0],
-                    surat_pelayanan: suratPelayananArr[0],
-                    surat_pelayanan_number: suratPelayananNumberArr[0],
-                    surat_pelayanan_expired: suratPelayananExpiredArr[0],
-                    // kotaasal: kotaMuat[0],
-                    // kotaBongkar: kotBongkar[0],
-                    tarif: sumHarga,
-                    biayaLain: sumBiayaLa,
-                    biayaMel: sumMel,
-                    hargaSelanjutnya: sumHargaSelanjutnya,
-                    biayaMultiMuat: sumBiayaMultiMuat,
-                    biayaTambahan: (getPengadaan.map((i) => i.biaya_tambahan) != '' ? getPengadaan.map((i) => i.biaya_tambahan) : getPengadaan.map((i) => i.biaya_tambahan))[0],
-                    customer: customer[0],
-                    memo: memo[0],
-                    totalMuat: sumMuat,
-                    totalBongkar: sumBongkar,
-                    totalovertonase: sumOvertonase[0],
-                    biayaMultiDrop: sumMultidrop[0],
-                    // totalBiayaLain: sumBiayaLain,
-                    totalDiskon: sumDiscont,
-                    new: (getPengadaan.map((i) => i.new) != '' ? getPengadaan.map((i) => i.new) : getDetail.map((i) => i.m_pengadaan.new))[0],
-
-
-                    // subTotal: service[0] != "Charter" ? core.sumArray(getPrice) * core.sumArray(getPriceBerat) : core.sumArray(getPrice),
-                    Totalprice: sumDiscont == 0 && service[0] == "Charter" ? core.sumArray(getPrice) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain : service[0] != "Charter" ? (core.sumArray(getPrice) * core.sumArray(getPriceBerat) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain) : (core.sumArray(getPrice) * sumDiscont) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain,
-                    totalFix: getPengadaan.map((i) => i.total_keseluruhan)[0],
-                    alamatInvoiceList: getAlamatInvoice.map((ii) => {
-                        sumBiayaLain
-                        return {
-                            id: ii.npwp_id,
-                            npwp: ii.npwp,
-                            address_npwp: ii.address_npwp
-
-                        }
-                    }),
-
-
-                    detail: await Promise.all(getAlamat.map(async (i) => {
-                        const getPickup = await models.alamat.findOne(
-                            {
-                                where: {
-                                    id: i.id_almuat
-                                },
-                                include: [
-                                    {
-                                        model: models.m_wil_provinsi,
-                                        attributes: ['nama_provinsi'],
-                                        required: false
-                                    }
-                                ]
-                            }
-                        );
-
-                        const getTujuan = await models.m_pengadaan_detail.findAll(
-                            {
-                                where: {
-                                    id_mp: idmp[0],
-                                    id_almuat: i.id_almuat
-                                }
-                            }
-                        );
-
-                        const getKendaraan = await models.kendaraan.findOne(
-                            {
-                                where: {
-                                    id: i.id_unit
-                                }
-                            }
-                        )
-                        const getDriver = await models.m_driver.findOne(
-                            {
-                                where: {
-                                    id: i.id_supir
-                                }
-                            }
-                        )
-                        return {
-                            idmpd: i.id_mpd,
-                            pickupId: getPickup == null ? "" : getPickup.id,
-                            pickup: getPickup == null ? "-" : getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
-                            idKendaraan: getKendaraan == null ? "" : getKendaraan.id,
-                            nopol: getKendaraan == null ? "" : getKendaraan.no_polisi,
-                            driver: getDriver == null ? "" : getDriver.nama,
-                            noTelp: getDriver == null ? "" : getDriver.no_telp,
-
-                            tujuan: await Promise.all(getTujuan.map(async (ii) => {
-                                const getBongkar = await models.alamat.findOne(
-                                    {
-                                        where: {
-                                            id: ii.id_albongkar
-                                        },
-                                        include: [
-                                            {
-                                                model: models.m_wil_provinsi,
-                                                attributes: ['nama_provinsi'],
-                                                required: false
-                                            }
-                                        ]
-                                    }
-                                );
-
-                                const getTarif = await models.m_tarif_customer.findOne(
-                                    {
-                                        where: {
-                                            id_tarif_customer: ii.id_price_customer
-                                        }
-                                    }
-                                );
-
-                                const getSJ = await models.m_sm.findOne(
-                                    {
-                                        where: {
-                                            id_mpd: ii.id_mpd
-                                        }
-                                    }
-                                );
-                                // res.send(getSJ)
-                                const getShipment = await models.m_shipment.findOne(
-                                    {
-                                        where: {
-                                            id: ii.shipment
-                                        }
-                                    }
-                                )
-                                const getKendaraanJenis = await models.kendaraan_jenis.findOne(
-                                    {
-                                        where: {
-                                            nama_kendaraan_jenis: ii.kendaraan,
-                                        }
-                                    }
-                                )
-
-                                const getMitra1 = getSJ ? await models.mitra.findOne(
-                                    { 
-                                        where: { id_mitra: getSJ.id_mitra_pickup } 
-                                    }
-                                ) : null;
-                                
-                                const getMitra2 = getSJ ? await models.mitra.findOne(
-                                    { 
-                                        where: { id_mitra: getSJ.id_mitra } 
-                                    }
-                                ) : null;
-                                
-                                const getMitra3 = getSJ ? await models.mitra.findOne(
-                                    { 
-                                        where: { id_mitra: getSJ.id_mitra_2 } 
-                                    }
-                                ) : null;
-
-
-                                return {
-                                    idmpd: ii.id_mpd,
-                                    noSJ: getSJ?.msm,
-                                    supirSJ1: getSJ == null ? "-" : getSJ.id_driver,
-                                    supirSJ2: getSJ == null ? "-" : getSJ.id_driver_2,
-                                    supir1: getSJ?.pickup_supir || "-",
-                                    supir2: getSJ?.supir || "-",
-                                    supir3: getSJ?.supir_2 || "-",
-                                    mitraSJ1: getSJ == null ? "-" : getSJ.id_mitra_pickup,
-                                    mitraSJ2: getSJ == null ? "-" : getSJ.id_mitra,
-                                    mitraSJ3: getSJ == null ? "-" : getSJ.id_mitra_2,
-                                    mitra1: getMitra1?.nama_mitra || "-",
-                                    mitra2: getMitra2?.nama_mitra || "-",
-                                    mitra3: getMitra3?.nama_mitra || "-",
-                                    kendaraan1: getSJ?.pickup_kendaraan || "-",
-                                    kendaraan2: getSJ?.kendaraan || "-",
-                                    kendaraan3: getSJ?.kendaraan_2 || "-",
-                                    nopol1: getSJ?.pickup_nopol || "-",
-                                    nopol2: getSJ?.nopol || "-",
-                                    nopol3: getSJ?.nopol_2 || "-",
-                                    kendaraanJenisId: getKendaraanJenis == null ? "" : getKendaraanJenis.id_kendaraan_jenis,
-                                    kendaraan: ii.kendaraan,
-                                    service: getService,
-                                    pickupId: getPickup?.id,
-                                    pickup: getPickup?.alamat,
-                                    destinationId: getBongkar?.id,
-                                    destination: getBongkar?.alamat,
-                                    via: ii.via,
-                                    shipmentID: ii.shipment,
-                                    shipmentName: getShipment == null ? "-" : getShipment.shipment,
-                                    id_kota_muat: ii?.id_kota_muat,
-                                    id_kota_bongkar: ii?.id_kota_bongkar,
-                                    item: ii.nama_barang,
-                                    qty: ii.qty,
-                                    koli: ii.koli,
-                                    berat: ii.berat,
-                                    ikat: ii.ikat,
-                                    Price: ii.harga,
-                                    biayaLain: ii.biaya_lain,
-                                    biayaMel: ii.biaya_mel,
-                                    harga_type: ii.harga_type,
-                                    biaya_multi_drop: ii.biaya_multidrop,
-                                    max_tonase: ii.max_tonase,
-                                    biaya_overtonase: ii.biaya_overtonase,
-                                    harga_selanjutnya: ii.harga_selanjutnya,
-                                    biaya_tambahan: ii.biaya_tambahan,
-                                    biaya_multimuat: ii.biaya_multimuat,
-                                    // harga: ii.harga,
-                                    harga_muat: ii.harga_muat,
-                                    harga_bongkar: ii.harga_bongkar,
-                                    diskon: ii.diskon,
-                                    unitId: ii.id_unit,
-                                    supirId: ii.id_supir,
-                                    total: ii.total,
-                                    totalBiayaRetail: (ii.harga * ii.berat) + ii.harga_bongkar + ii.harga_muat,
-                                    totalBiayaCharter: ii.harga + ii.harga_bongkar + ii.harga_muat,
-                                    biaya_jalan: getTarif?.biaya_jalan,
-
-                                    // supirSM2:ii.m_sm.id_unit_2 == null ?"-":ii.m_sm.id_unit_2,
-
-                                }
-
-                            })),
-
-
-                            // destination: getBongkar.alamat,
-                            // via: i.via,
-                            // item: i.nama_barang,
-                            // qty: i.qty,
-                            // berat: i.berat,  
-                            // Price: i.harga,
-                            // harga_type: i.harga_type,
-                            // harga: i.harga,
-                            // harga_muat: i.harga_muat,
-                            // harga_bongkar: i.harga_bongkar,
-                            // diskon: i.diskon,
-                            // total: i.total
-
-                        }
-
-
-
-                    })),
-                    // const totalSemua = results.reduce((total, item) => total + item.total, 0);
-
-
-                }
-
-            }
-        }
-
-
-
-    } catch (error) {
-        output = {
-            status: {
-                code: 500,
-                message: error.message
-            }
-        }
-    }
-
-    const errorsFromMiddleware = await customErrorMiddleware(req)
-
-    if (!errorsFromMiddleware) {
-        res.status(output.status.code).send(output)
-    } else {
-        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
-    }
-}
-
-// exports.getSpListAllDetail = async (req, res) => {
-//     try {
-
-//         models.m_pengadaan_detail.belongsTo(models.m_pengadaan, { targetKey: 'id_mp', foreignKey: 'id_mp' });
-//         models.m_pengadaan_detail.belongsTo(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
-
-//         models.m_pengadaan_detail.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_almuat' });
-//         models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
-//         models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
-//         // models.customer.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_customer' });
-//         models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
-//         models.m_pengadaan_detail.belongsTo(models.alamat, { targetKey: 'id', foreignKey: 'id_albongkar' });
-//         models.m_pengadaan_detail.belongsTo(models.kendaraan_jenis, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
-//         models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_tarif_customer', foreignKey: 'id_price_customer' });
-
-//         // models.m_pengadaan_detail.belongsTo(models.m_tarif_customer, { targetKey: 'id_price_customer', foreignKey: 'id_price_customer' });
-//         // models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_muat_kota', foreignKey: 'id_tujuan_kota' });
-
-//         if (!models.m_tarif_customer.associations.kotaAsal) {
-//             models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_muat_kota', as: 'kotaAsal' });
-//         }
-//         if (!models.m_tarif_customer.associations.kotaTujuan) {
-//             models.m_tarif_customer.belongsTo(models.m_wil_kota, { targetKey: 'id_kota', foreignKey: 'id_tujuan_kota', as: 'kotaTujuan' });
-//         }
-//         // if (!models.m_pengadaan.associations.gl) {
-//         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_gl', as: 'gl' });
-//         // }
-//         // if (!models.m_pengadaan.associations.asm) {
-//         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_asm', as: 'asm' });
-//         // }
-//         // if (!models.m_pengadaan.associations.mgr) {
-//         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_mgr', as: 'mgr' });
-//         // }
-//         // if (!models.m_pengadaan.associations.kacab) {
-//         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_kacab', as: 'kacab' });
-//         // }
-//         // if (!models.m_pengadaan.associations.amd) {
-//         //     models.m_pengadaan.belongsTo(models.m_bu_employee, { targetKey: 'code_employee_position', foreignKey: 'id_amd', as: 'amd' });
-//         // }
-
-
-//         // models.m_pengadaan_detail.belongsTo(models.kendaraan, { targetKey: 'nama_kendaraan_jenis', foreignKey: 'kendaraan' });
-
-
-
-
-
-
-//         const getUser = await models.users.findOne(
-//             {
-//                 id: req.user.id
-//             }
-//         )
-//         if (getUser) {
-//             const getDetail = await models.m_pengadaan_detail.findAll(
-//                 {
-//                     where: {
-//                         id_mp: req.query.idmp
-//                     },
-//                     group: ['id_mpd'],
-//                     include: [
-//                         {
-//                             model: models.m_pengadaan,
-//                             required: false,
-//                             include:
-//                                 [
-//                                     {
-//                                         model: models.customer,
-//                                         include: [
-//                                             {
-//                                                 model: models.alamat
-//                                             },
-
-//                                         ]
-//                                     },
-//                                     {
-//                                         model: models.users
-//                                     },
-//                                     // {
-//                                     //     model: models.m_bu_employee,
-//                                     //     as: 'gl',
-//                                     //     attributes: ['fullname']
-//                                     // },
-//                                     // {
-//                                     //     model: models.m_bu_employee,
-//                                     //     as: 'asm',
-//                                     //     attributes: ['fullname']
-//                                     // },
-//                                     // {
-//                                     //     model: models.m_bu_employee,
-//                                     //     as: 'mgr',
-//                                     //     attributes: ['fullname']
-
-//                                     // },
-//                                     // {
-//                                     //     model: models.m_bu_employee,
-//                                     //     as: 'kacab',
-//                                     //     attributes: ['fullname']
-
-//                                     // },
-//                                     // {
-//                                     //     model: models.m_bu_employee,
-//                                     //     as: 'amd',
-//                                     //     attributes: ['fullname']
-
-//                                     // },
-//                                 ]
-
-//                         },
-//                         {
-//                             model: models.m_sm,
-//                             // required: false
-//                         },
-//                         {
-//                             model: models.alamat,
-//                             required: true
-//                         },
-//                         {
-//                             model: models.kendaraan_jenis,
-//                             // required: false
-//                         },
-//                         {
-//                             model: models.m_tarif_customer,
-//                             include: [
-//                                 {
-//                                     model: models.m_wil_kota,
-//                                     as: 'kotaAsal'
-//                                 },
-//                                 {
-//                                     model: models.m_wil_kota,
-//                                     as: 'kotaTujuan'
-//                                 },
-//                             ]
-//                         }
-//                     ]
-//                 }
-//             )
-
-
-
-
-//             // const getMuat = await models.alamat.findOne(
-//             //     {
-//             //         where: {
-//             //             id: req.query.idMuat
-//             //         },
-//             //         attributes: ['kota']
-//             //     }
-//             // )
-//             // const getBongkar = await models.alamat.findOne(
-//             //     {
-//             //         where: {
-//             //             id: req.query.idBongkar
-//             //         },
-//             //         attributes: ['kota']
-//             //     }
-
-
-//             // )
-//             // console.log("🚀 ~ file: sp.controller.js:188 ~ exports.getSpDetail= ~ getDetail:", getDetail.id_almuat)
-//             const getPengadaan = await models.m_pengadaan.findAll(
-//                 {
-//                     where: {
-//                         id_mp: req.query.idmp
-//                     },
-//                     include: [
-//                         {
-//                             model: models.users
-//                         },
-
-//                         // {
-//                         //     model: models.m_bu_employee,
-//                         //     as: 'gl',
-//                         //     attributes: ['fullname']
-//                         // },
-//                         // {
-//                         //     model: models.m_bu_employee,
-//                         //     as: 'asm',
-//                         //     attributes: ['fullname']
-//                         // },
-//                         // {
-//                         //     model: models.m_bu_employee,
-//                         //     as: 'mgr',
-//                         //     attributes: ['fullname']
-
-//                         // },
-//                         // {
-//                         //     model: models.m_bu_employee,
-//                         //     as: 'kacab',
-//                         //     attributes: ['fullname']
-
-//                         // },
-//                         // {
-//                         //     model: models.m_bu_employee,
-//                         //     as: 'amd',
-//                         //     attributes: ['fullname']
-
-//                         // },
-
-//                     ]
-//                 }
-//             )
-//             const getAlamat = await models.m_pengadaan_detail.findAll(
-//                 {
-//                     group: ['id_almuat'],
-//                     where: {
-//                         id_mp: req.query.idmp
-//                     }
-//                 }
-//             )
-
-//             const idcustomer = getPengadaan.map((i) => i.id_customer)
-
-//             const getCustomer = await models.customer.findAll(
-//                 {
-//                     where: {
-//                         id_customer: idcustomer
-//                     }
-//                 }
-//             )
-
-//             const getAlamatInvoice = await models.customer_npwp.findAll(
-//                 {
-//                     where: {
-//                         customer_id: idcustomer
-//                     }
-
-
-//                 }
-//             )
-
-
-//             if (getDetail) {
-//                 const getPrice = getDetail.map((i) => i.harga)
-//                 const getPriceBerat = getDetail.map((i) => i.berat)
-//                 // console.log("🚀 ~ file: sp.controller.js:4990 ~ exports.getSpListAllDetail= ~ getPrice:", getPrice)
-//                 // const getSubPrice = getDetail.map((i) => i.harga[0])
-//                 const idmp = (getPengadaan.map((i) => i.id_mp) != '' ? getPengadaan.map((i) => i.id_mp) : getDetail.map((i) => i.m_pengadaan.id_mp));
-//                 const noSpk = (getPengadaan.map((i) => i.mspk) != '' ? getPengadaan.map((i) => i.mspk) : getDetail.map((i) => i.m_pengadaan.mspk));
-//                 const noSp = (getPengadaan.map((i) => i.msp) != '' ? getPengadaan.map((i) => i.msp) : getDetail.map((i) => i.m_pengadaan.msp));
-//                 const memo = (getPengadaan.map((i) => i.memo) != '' ? getPengadaan.map((i) => i.memo) : getDetail.map((i) => i.m_pengadaan.memo));
-//                 const hargaTotal = (getPengadaan.map((i) => i.biaya_jalan) != '' ? getPengadaan.map((i) => i.biaya_jalan) : getPengadaan.map((i) => i.biaya_jalan));
-//                 const melTotal = (getPengadaan.map((i) => i.biaya_mel) != '' ? getPengadaan.map((i) => i.biaya_mel) : getPengadaan.map((i) => i.biaya_mel));
-//                 const biayaLainTotal = (getPengadaan.map((i) => i.biaya_lain) != '' ? getPengadaan.map((i) => i.biaya_lain) : getPengadaan.map((i) => i.biaya_lain));
-//                 const biayaMultimuatTotal = (getPengadaan.map((i) => i.biaya_multi_muat) != '' ? getPengadaan.map((i) => i.biaya_multi_muat) : getPengadaan.map((i) => i.biaya_multi_muat));
-//                 const hargaSelanjutnyaTotal = (getPengadaan.map((i) => i.harga_selanjutnya) != '' ? getPengadaan.map((i) => i.harga_selanjutnya) : getPengadaan.map((i) => i.harga_selanjutnya));
-//                 const service = (getPengadaan.map((i) => i.service) != '' ? getPengadaan.map((i) => i.service) : getDetail.map((i) => i.m_pengadaan.service));
-
-//                 const orderDate = (getPengadaan.map((i) => i.tgl_order) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_order).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_order).format("DD-MM-YYYY HH:mm:ss")));
-//                 const pickupDate = (getPengadaan.map((i) => i.tgl_pickup) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")));
-//                 const bongkarDate = (getDetail.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getDetail.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : '-')
-//                 const jenisBarang = (getPengadaan.map((i) => i.jenis_barang) != '' ? getPengadaan.map((i) => i.jenis_barang) : getDetail.map((i) => i.m_pengadaan.jenis_barang));
-//                 const asuransi = (getPengadaan.map((i) => i.asuransi) != '' ? getPengadaan.map((i) => i.asuransi) : getDetail.map((i) => i.m_pengadaan.asuransi));
-//                 const getGl = getDetail.map((i) => i.m_pengadaan.gl == null ? "-" : i.m_pengadaan.fullname)
-//                 const getAsm = getDetail.map((i) => i.m_pengadaan.asm == null ? "-" : i.m_pengadaan.asm.fullname)
-//                 const getMgr = getDetail.map((i) => i.m_pengadaan.mgr == null ? "-" : i.m_pengadaan.mgr.fullname)
-//                 const getKacab = getDetail.map((i) => i.m_pengadaan.kacab == null ? "-" : i.m_pengadaan.kacab.fullname)
-//                 const getAmd = getDetail.map((i) => i.m_pengadaan.amd == null ? "-" : i.m_pengadaan.amd.fullname)
-
-
-//                 const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
-
-//                 const marketing = getPengadaan.map((i) => i.user.nama_lengkap == null ? "-" : i.user.nama_lengkap)
-//                 const getService = getPengadaan.map((i) => i.service)
-//                 const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
-//                 const customer = (getCustomer.map((i) => i.nama_perusahaan) != '' ? getCustomer.map((i) => i.nama_perusahaan) : getDetail.map((i) => i.m_pengadaan.customer.nama_perusahaan));
-//                 ///////TOTAL BIAYA\\\\\\\\\\\\\\\\
-//                 const total_muat = getDetail.map((i) => i.harga_muat)
-//                 const total_biayaMuatBongkar = getDetail.map((i) => i.harga_bongkar)
-//                 const total_overtonase = getDetail.map((i) => i.m_pengadaan.overtonase)
-//                 const total_biayaOvertonase = getPengadaan.map((i) => i.biaya_overtonase)
-//                 const total_biayaMultidrop = getPengadaan.map((i) => i.biaya_multi_drop)
-//                 const total_biayaLain = getDetail.map((i) => i.m_pengadaan.biaya_muat_bongkar)
-//                 const total_diskon = getDetail.map((i) => i.m_pengadaan.diskon)
-//                 const total_keseluruhan = getDetail.map((i) => i.m_pengadaan.total_keseluruhan)
-//                 const kotaMuat = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaAsal.nama_kota)
-//                 const kotBongkar = getDetail.map((i) => i.m_tarif_customer == null ? "-" : i.m_tarif_customer.kotaTujuan.nama_kota)
-
-//                 const totalan = getPrice * getPriceBerat
-
-//                 // const kedaraanId = getDetail.map((i) => i.m_pengadaan.packing.jenis)
-//                 // const status = getDetail.map((i) => i.m_pengadaan.status == 1 ? "Aktif" : "Cancel")
-
-
-
-//                 const sumMuat = core.sumArray(total_muat)
-//                 const sumBongkar = core.sumArray(total_biayaMuatBongkar)
-//                 const sumOvertonase = total_biayaOvertonase
-//                 const sumMultidrop = total_biayaMultidrop
-//                 const sumBiayaLain = core.sumArray(total_biayaLain)
-//                 const sumBiayaMultiMuat = core.sumArray(biayaMultimuatTotal)
-//                 // const sumBongkar = core.sumArray(total_biayaMuatBongkar) 
-//                 const sumDiscont = core.sumArray(total_diskon)
-//                 const sumBerat = core.sumArray(getPriceBerat)
-//                 const sumMel = core.sumArray(melTotal)
-//                 const sumBiayaLa = core.sumArray(biayaLainTotal)
-//                 const sumHargaSelanjutnya = core.sumArray(hargaSelanjutnyaTotal)
-//                 const sumHarga = core.sumArray(hargaTotal)
-
-//                 // const getMuat = await models.alamat.findOne(
-
-//                 output = {
-//                     status: {
-//                         code: 200,
-//                         message: 'Success get Data'
-//                     },
-//                     idmp: idmp[0],
-//                     jenisBarang: jenisBarang[0],
-//                     // packing: packing[0],
-//                     asuransi: asuransi[0],
-//                     // gl: getGl[0],
-//                     // asm: getAsm[0],
-//                     // mgr: getMgr[0],
-//                     // kacab: getKacab[0],
-//                     // amd: getAmd[0],
-
-//                     gl: "-",
-//                     asm: "-",
-//                     mgr: "-",
-//                     kacab: "-",
-//                     amd: "-",
-//                     // status: status[0],
-//                     spk: noSpk[0],
-//                     sp: noSp[0],
-//                     marketing: marketing[0],
-//                     service: service[0],
-//                     order_date: orderDate[0],
-//                     pickup_date: pickupDate[0],
-//                     bongkar_date: bongkarDate[0],
-//                     alamatInvoice: alamaInvoice[0],
-//                     telpCustomer: telpCustomer[0],
-//                     idcustomer: idcustomer[0],
-//                     // kotaasal: kotaMuat[0],
-//                     // kotaBongkar: kotBongkar[0],
-//                     tarif: sumHarga,
-//                     biayaLain: sumBiayaLa,
-//                     biayaMel: sumMel,
-//                     hargaSelanjutnya: sumHargaSelanjutnya,
-//                     biayaMultiMuat: sumBiayaMultiMuat,
-//                     biayaTambahan: (getPengadaan.map((i) => i.biaya_tambahan) != '' ? getPengadaan.map((i) => i.biaya_tambahan) : getPengadaan.map((i) => i.biaya_tambahan))[0],
-//                     customer: customer[0],
-//                     memo: memo[0],
-//                     totalMuat: sumMuat,
-//                     totalBongkar: sumBongkar,
-//                     totalovertonase: sumOvertonase[0],
-//                     biayaMultiDrop: sumMultidrop[0],
-//                     // totalBiayaLain: sumBiayaLain,
-//                     totalDiskon: sumDiscont,
-
-
-//                     // subTotal: service[0] != "Charter" ? core.sumArray(getPrice) * core.sumArray(getPriceBerat) : core.sumArray(getPrice),
-//                     Totalprice: sumDiscont == 0 && service[0] == "Charter" ? core.sumArray(getPrice) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain : service[0] != "Charter" ? (core.sumArray(getPrice) * core.sumArray(getPriceBerat) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain) : (core.sumArray(getPrice) * sumDiscont) + sumMuat + sumBongkar + sumOvertonase + sumMultidrop + sumBiayaLain,
-//                     totalFix: getPengadaan.map((i) => i.total_keseluruhan)[0],
-//                     alamatInvoiceList: getAlamatInvoice.map((ii) => {
-//                         sumBiayaLain
-//                         return {
-//                             id: ii.npwp_id,
-//                             npwp: ii.npwp,
-//                             address_npwp: ii.address_npwp
-
-//                         }
-//                     }),
-
-
-//                     detail: await Promise.all(getAlamat.map(async (i) => {
-//                         const getPickup = await models.alamat.findOne(
-//                             {
-//                                 where: {
-//                                     id: i.id_almuat
-//                                 }
-//                             }
-//                         );
-
-//                         const getTujuan = await models.m_pengadaan_detail.findAll(
-//                             {
-//                                 where: {
-//                                     id_mp: idmp[0],
-//                                     id_almuat: i.id_almuat
-//                                 }
-//                             }
-//                         );
-
-//                         const getKendaraan = await models.kendaraan.findOne(
-//                             {
-//                                 where: {
-//                                     id: i.id_unit
-//                                 }
-//                             }
-//                         )
-//                         const getDriver = await models.m_driver.findOne(
-//                             {
-//                                 where: {
-//                                     id: i.id_supir
-//                                 }
-//                             }
-//                         )
-//                         return {
-//                             idmpd: i.id_mpd,
-//                             pickupId: getPickup.id,
-//                             pickup: getPickup.alamat + " (PIC: " + getPickup.pic + " - " + getPickup.jabatan + " - " + getPickup.hp + ")",
-//                             idKendaraan: getKendaraan == null ? "" : getKendaraan.id,
-//                             nopol: getKendaraan == null ? "" : getKendaraan.no_polisi,
-//                             driver: getDriver == null ? "" : getDriver.nama,
-//                             noTelp: getDriver == null ? "" : getDriver.no_telp,
-
-//                             tujuan: await Promise.all(getTujuan.map(async (ii) => {
-//                                 const getBongkar = await models.alamat.findOne(
-//                                     {
-//                                         where: {
-//                                             id: ii.id_albongkar
-//                                         }
-//                                     }
-//                                 );
-
-//                                 const getTarif = await models.m_tarif_customer.findOne(
-//                                     {
-//                                         where: {
-//                                             id_tarif_customer: ii.id_price_customer
-//                                         }
-//                                     }
-//                                 );
-
-//                                 const getSJ = await models.m_sm.findOne(
-//                                     {
-//                                         where: {
-//                                             id_mpd: ii.id_mpd
-//                                         }
-//                                     }
-//                                 );
-//                                 // res.send(getSJ)
-//                                 const getShipment = await models.m_shipment.findOne(
-//                                     {
-//                                         where: {
-//                                             id: ii.shipment
-//                                         }
-//                                     }
-//                                 )
-//                                 const getKendaraanJenis = await models.kendaraan_jenis.findOne(
-//                                     {
-//                                         where: {
-//                                             nama_kendaraan_jenis: ii.kendaraan,
-//                                         }
-//                                     }
-//                                 )
-
-//                                 const getMitra1 = getSJ ? await models.mitra.findOne(
-//                                     { 
-//                                         where: { id_mitra: getSJ.id_mitra_pickup } 
-//                                     }
-//                                 ) : null;
-                                
-//                                 const getMitra2 = getSJ ? await models.mitra.findOne(
-//                                     { 
-//                                         where: { id_mitra: getSJ.id_mitra } 
-//                                     }
-//                                 ) : null;
-                                
-//                                 const getMitra3 = getSJ ? await models.mitra.findOne(
-//                                     { 
-//                                         where: { id_mitra: getSJ.id_mitra_2 } 
-//                                     }
-//                                 ) : null;
-
-
-//                                 return {
-//                                     idmpd: ii.id_mpd,
-//                                     noSJ: getSJ?.msm,
-//                                     supirSJ1: getSJ == null ? "-" : getSJ.id_driver,
-//                                     supirSJ2: getSJ == null ? "-" : getSJ.id_driver_2,
-//                                     supir1: getSJ?.pickup_supir || "-",
-//                                     supir2: getSJ?.supir || "-",
-//                                     supir3: getSJ?.supir_2 || "-",
-//                                     mitraSJ1: getSJ == null ? "-" : getSJ.id_mitra_pickup,
-//                                     mitraSJ2: getSJ == null ? "-" : getSJ.id_mitra,
-//                                     mitraSJ3: getSJ == null ? "-" : getSJ.id_mitra_2,
-//                                     mitra1: getMitra1?.nama_mitra || "-",
-//                                     mitra2: getMitra2?.nama_mitra || "-",
-//                                     mitra3: getMitra3?.nama_mitra || "-",
-//                                     kendaraan1: getSJ?.pickup_kendaraan || "-",
-//                                     kendaraan2: getSJ?.kendaraan || "-",
-//                                     kendaraan3: getSJ?.kendaraan_2 || "-",
-//                                     nopol1: getSJ?.pickup_nopol || "-",
-//                                     nopol2: getSJ?.nopol || "-",
-//                                     nopol3: getSJ?.nopol_2 || "-",
-//                                     kendaraanJenisId: getKendaraanJenis.id_kendaraan_jenis,
-//                                     kendaraan: ii.kendaraan,
-//                                     service: getService,
-//                                     pickupId: getPickup?.id,
-//                                     pickup: getPickup?.alamat,
-//                                     destinationId: getBongkar?.id,
-//                                     destination: getBongkar?.alamat,
-//                                     via: ii.via,
-//                                     shipmentID: ii.shipment,
-//                                     shipmentName: getShipment.shipment,
-//                                     id_kota_muat: ii?.id_kota_muat,
-//                                     id_kota_bongkar: ii?.id_kota_bongkar,
-//                                     item: ii.nama_barang,
-//                                     qty: ii.qty,
-//                                     koli: ii.koli,
-//                                     berat: ii.berat,
-//                                     ikat: ii.ikat,
-//                                     Price: ii.harga,
-//                                     biayaLain: ii.biaya_lain,
-//                                     biayaMel: ii.biaya_mel,
-//                                     harga_type: ii.harga_type,
-//                                     biaya_multi_drop: ii.biaya_multidrop,
-//                                     max_tonase: ii.max_tonase,
-//                                     biaya_overtonase: ii.biaya_overtonase,
-//                                     harga_selanjutnya: ii.harga_selanjutnya,
-//                                     biaya_tambahan: ii.biaya_tambahan,
-//                                     biaya_multimuat: ii.biaya_multimuat,
-//                                     // harga: ii.harga,
-//                                     harga_muat: ii.harga_muat,
-//                                     harga_bongkar: ii.harga_bongkar,
-//                                     diskon: ii.diskon,
-//                                     unitId: ii.id_unit,
-//                                     supirId: ii.id_supir,
-//                                     total: ii.total,
-//                                     totalBiayaRetail: (ii.harga * ii.berat) + ii.harga_bongkar + ii.harga_muat,
-//                                     totalBiayaCharter: ii.harga + ii.harga_bongkar + ii.harga_muat,
-//                                     biaya_jalan: getTarif?.biaya_jalan,
-
-//                                     // supirSM2:ii.m_sm.id_unit_2 == null ?"-":ii.m_sm.id_unit_2,
-
-//                                 }
-
-//                             })),
-
-
-//                             // destination: getBongkar.alamat,
-//                             // via: i.via,
-//                             // item: i.nama_barang,
-//                             // qty: i.qty,
-//                             // berat: i.berat,  
-//                             // Price: i.harga,
-//                             // harga_type: i.harga_type,
-//                             // harga: i.harga,
-//                             // harga_muat: i.harga_muat,
-//                             // harga_bongkar: i.harga_bongkar,
-//                             // diskon: i.diskon,
-//                             // total: i.total
-
-//                         }
-
-
-
-//                     })),
-//                     // const totalSemua = results.reduce((total, item) => total + item.total, 0);
-
-
-//                 }
-
-//             }
-//         }
-
-
-
-//     } catch (error) {
-//         output = {
-//             status: {
-//                 code: 500,
-//                 message: error.message
-//             }
-//         }
-//     }
-
-//     const errorsFromMiddleware = await customErrorMiddleware(req)
-
-//     if (!errorsFromMiddleware) {
-//         res.status(output.status.code).send(output)
-//     } else {
-//         res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
-//     }
-// }
 
 exports.getSpListApprove = async (req, res) => {
     try {
@@ -17227,8 +16765,13 @@ exports.getBiayaTambahanSpDetail = async (req, res) => {
                         code: 200,
                         message: 'Data biaya tambahan SP detail berhasil diambil'
                     },
-                    data: [],
-                    total_biaya_tambahan: 0
+                    data: {
+                        cost: [],
+                        uj: []
+                    },
+                    total_biaya_tambahan: 0,
+                    total_uj: 0,
+                    total_keseluruhan: 0
                 };
             } else {
                 // Get all m_sm berdasarkan id_mpd
@@ -17251,8 +16794,13 @@ exports.getBiayaTambahanSpDetail = async (req, res) => {
                             code: 200,
                             message: 'Data biaya tambahan SP detail berhasil diambil'
                         },
-                        data: [],
-                        total_biaya_tambahan: 0
+                        data: {
+                            cost: [],
+                            uj: []
+                        },
+                        total_biaya_tambahan: 0,
+                        total_uj: 0,
+                        total_keseluruhan: 0
                     };
                 } else {
                     // Get all m_sm_cost berdasarkan id_msm
@@ -17264,8 +16812,32 @@ exports.getBiayaTambahanSpDetail = async (req, res) => {
                         order: [['id_msm', 'ASC'], ['created_at', 'DESC']]
                     });
 
-                    // Flatten data menjadi list
-                    const result = costList.map(cost => {
+                    // Get all uang_jalan_new berdasarkan id_msm
+                    // Semua field yang diperlukan sudah ada di uang_jalan_new
+                    const ujList = await models.uang_jalan_new.findAll({
+                        where: {
+                            id_msm: { [Op.in]: idMsmList }
+                        },
+                        attributes: ['id_msm', 'msm', 'jenis_uj', 'bbm', 'makan', 'parkir', 'tol', 'tkbm', 'total_semua'],
+                        order: [['id_msm', 'ASC'], ['created_at', 'DESC']]
+                    });
+
+                    // Flatten data UJ menjadi list
+                    const resultUj = ujList.map(uj => {
+                        return {
+                            msm: uj.msm || smMap[uj.id_msm] || null,
+                            jenis_uj: uj.jenis_uj || null,
+                            bbm: uj.bbm || 0,
+                            makan: uj.makan || 0,
+                            parkir: uj.parkir || 0,
+                            tol: uj.tol || 0,
+                            tkbm: uj.tkbm || 0,
+                            total_semua: uj.total_semua || 0
+                        };
+                    });
+
+                    // Flatten data cost menjadi list
+                    const resultCost = costList.map(cost => {
                         return {
                             msm: smMap[cost.id_msm] || null,
                             cost_type: cost.cost_type,
@@ -17280,13 +16852,26 @@ exports.getBiayaTambahanSpDetail = async (req, res) => {
                         return sum + (cost.amount || 0);
                     }, 0);
 
+                    // Hitung total UJ
+                    const totalUj = resultUj.reduce((sum, uj) => {
+                        return sum + (uj.total_semua || 0);
+                    }, 0);
+
+                    // Hitung total keseluruhan
+                    const totalKeseluruhan = totalBiayaTambahan + totalUj;
+
                     output = {
                         status: {
                             code: 200,
                             message: 'Data biaya tambahan SP detail berhasil diambil'
                         },
-                        data: result,
-                        total_biaya_tambahan: totalBiayaTambahan
+                        data: {
+                            cost: resultCost,
+                            uj: resultUj
+                        },
+                        total_biaya_tambahan: totalBiayaTambahan,
+                        total_uj: totalUj,
+                        total_keseluruhan: totalKeseluruhan
                     };
                 }
             }
