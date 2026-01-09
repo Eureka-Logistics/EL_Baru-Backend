@@ -246,7 +246,9 @@ exports.getAllProduk = async (req, res) => {
                 whereCondition[Op.and].push({
                     [Op.or]: [
                         { default_code: { [Op.like]: `%${keyword}%` } },
-                        { barcode: { [Op.like]: `%${keyword}%` } }
+                        { barcode: { [Op.like]: `%${keyword}%` } },
+                        // Cari juga di template_name (JSON string) supaya user bisa search pakai nama produk yang tampil
+                        { template_name: { [Op.like]: `%${keyword}%` } }
                     ]
                 });
             }

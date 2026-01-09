@@ -223,6 +223,10 @@ exports.getWilayahKecamatan = async (req, res) => {
             }
         )
         if (getUser) {
+            // Normalisasi nama parameter dari FE (idProv, idKota) ke yang dipakai di query Sequelize
+            const idKotaParam = req.query.idkota || req.query.idKota;
+            const idProvParam = req.query.id_provinsi || req.query.idProv;
+
             const getData = await models.m_wil_kecamatan.findAndCountAll(
                 {
 
@@ -248,8 +252,8 @@ exports.getWilayahKecamatan = async (req, res) => {
                             model: models.m_wil_kota,
 
                             where: {
-                                ...req.query.idkota ? {
-                                    id_kota: req.query.idkota
+                                ...idKotaParam ? {
+                                    id_kota: idKotaParam
                                 } : {}
 
                             },
@@ -258,8 +262,8 @@ exports.getWilayahKecamatan = async (req, res) => {
                                 {
                                     model: models.m_wil_provinsi,
                                     where: {
-                                        ...req.query.id_provinsi ? {
-                                            id_provinsi: req.query.id_provinsi
+                                        ...idProvParam ? {
+                                            id_provinsi: idProvParam
                                         } : {}
 
                                     }

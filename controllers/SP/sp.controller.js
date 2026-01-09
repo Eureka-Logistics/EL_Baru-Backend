@@ -7901,6 +7901,9 @@ exports.getCancelDoList = async (req, res) => {
         models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
 
         models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales' });
+        if (!models.m_pengadaan.associations.salesDataCancelDo) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataCancelDo' });
+        }
 
         // models.m_pengadaan.belongsTo(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
         models.m_pengadaan.hasMany(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
@@ -7925,7 +7928,13 @@ exports.getCancelDoList = async (req, res) => {
                         {
                             model: models.m_pengadaan,
                             where: {
-                                status: "0"
+                                status: "0",
+                                ...req.query.year ? {
+                                    tgl_pickup: {
+                                        [Op.gte]: new Date(`${req.query.year}-01-01`),
+                                        [Op.lt]: new Date(`${req.query.year}-12-31T23:59:59.999`)
+                                    }
+                                } : {}
                             },
                             include: [
                                 {
@@ -7933,6 +7942,12 @@ exports.getCancelDoList = async (req, res) => {
                                 },
                                 {
                                     model: models.users
+                                },
+                                {
+                                    model: models.m_sales,
+                                    as: 'salesDataCancelDo',
+                                    attributes: ['nama_sales'],
+                                    required: false
                                 },
                                 {
                                     model: models.m_pengadaan_detail
@@ -7969,15 +7984,23 @@ exports.getCancelDoList = async (req, res) => {
                         } : ""
                     });
                     // console.log("🚀 ~ file: sp.controller.js:2031 ~ result ~ getMuat:", getMuat)
+                    // Determine marketing: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+                    let marketing = "-";
+                    if (item.m_pengadaan.code_sales != null && item.m_pengadaan.code_sales !== "" && item.m_pengadaan.salesDataCancelDo != null) {
+                        marketing = item.m_pengadaan.salesDataCancelDo.nama_sales || "-";
+                    } else if (item.m_pengadaan.user != null) {
+                        marketing = item.m_pengadaan.user.nama_lengkap || "-";
+                    }
+                    
                     return {
                         no: no++,
                         idmp: item.m_pengadaan.id_mp,
                         sp: item.m_pengadaan.msp,
                         perusahaan: item.m_pengadaan.customer.nama_perusahaan,
-                        marketing: item.m_pengadaan.user.nama_lengkap,
+                        marketing: marketing,
                         service: item.m_pengadaan.service,
                         pickupDate: core.moment(item.m_pengadaan.tgl_pickup).format('YYYY-MM-DD HH:MM:SS'),
-                        destination: getMuat.kota + " - " + getBongkar.kota,
+                        destination: (getMuat?.kota || "-") + " - " + (getBongkar?.kota || "-"),
                         vehicle: vehicle[0],
                         massage: item?.massage_do?.massage,
                     };
@@ -12234,6 +12257,9 @@ exports.getListWaitingPurch = async (req, res) => {
         models.m_pengadaan.belongsTo(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
         models.m_pengadaan_detail.belongsTo(models.m_sm, { targetKey: 'id_mpd', foreignKey: 'id_mpd' });
         models.m_pengadaan.belongsTo(models.m_status_order, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        if (!models.m_pengadaan.associations.salesDataPurch) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataPurch' });
+        }
 
         models.m_status_order.belongsTo(models.users, { targetKey: 'id', foreignKey: 'operasional' });
 
@@ -12302,6 +12328,12 @@ exports.getListWaitingPurch = async (req, res) => {
                         },
                         {
                             model: models.users,
+                            required: false
+                        },
+                        {
+                            model: models.m_sales,
+                            as: 'salesDataPurch',
+                            attributes: ['nama_sales'],
                             required: false
                         },
                         {
@@ -12511,12 +12543,20 @@ exports.getListWaitingPurch = async (req, res) => {
 
                 // let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
                 const result = uniqueSPData.map((item, index) => {
+                    // Determine salesName: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+                    let salesName = "-";
+                    if (item.code_sales != null && item.code_sales !== "" && item.salesDataPurch != null) {
+                        salesName = item.salesDataPurch.nama_sales || "-";
+                    } else if (item.user != null) {
+                        salesName = item.user.nama_lengkap || "-";
+                    }
+                    
                     return {
                         no: startIndex + index,
                         idmp: item.id_mp,
                         noSj: item.m_pengadaan_detail?.m_sm?.msm,
                         sp: item.msp,
-                        salesName: item.user.nama_lengkap,
+                        salesName: salesName,
                         perusahaan: item.customer?.nama_perusahaan,
                         service: item.service,
                         pickupDate: core.moment(item.tgl_pickup,).format('YYYY-MM-DD hh:mm:ss'),
@@ -13629,6 +13669,11 @@ exports.getSpListAll2 = async (req, res) => {
             getUser.divisi === 'Rcadmin'
         );
 
+        // Cek divisi user (case insensitive)
+        const userDivisi = getUser ? (getUser.divisi || '').toLowerCase() : '';
+        const isSales = userDivisi === 'sales';
+        const isRcadmin = userDivisi === 'rcadmin';
+
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
 
         // Siapkan kondisi query dengan parameter yang dinamis
@@ -13636,51 +13681,74 @@ exports.getSpListAll2 = async (req, res) => {
         // Gunakan dari query parameter jika ada, jika tidak gunakan id_bu dari user yang login
         const filterBuId = isSalesOrRcadmin ? (req.query.buId || (getUser && getUser.id_bu ? getUser.id_bu : null)) : null;
         
-        const queryConditions = {
-            // tgl_order: {
-            //     [Op.gte]: new Date(new Date().getFullYear(), 0, 1) // Default tahun ini
-            // },
-            // ...(req.query.tglSp && {
-            //     tgl_order: {
-            //         [Op.gte]: new Date(req.query.tglSp + '-01-01'), // Awal tahun
-            //         [Op.lt]: new Date((parseInt(req.query.tglSp) + 1) + '-01-01') // Awal tahun berikutnya
-            //     }
-            // }),
-            // Filter: menampilkan data berdasarkan id_bu user yang login
-            // Hanya berlaku untuk divisi sales dan rcadmin
-            // Filter menggunakan LIKE pada field msp:
-            // - Jika id_bu = 11, maka HANYA msp LIKE '11-SO%' (tidak boleh 21-SO atau yang lain)
-            // - Jika id_bu = 21, maka msp LIKE '21-SO%' OR msp LIKE 'SP%'
-            // Untuk sales/rcadmin: juga filter berdasarkan id_bu di m_pengadaan dan id_bu dari user sales (hanya untuk data yang tidak mengikuti pola msp)
-            ...(isSalesOrRcadmin && filterBuId ? {
-                [Op.or]: [
-                    // Filter berdasarkan format msp menggunakan LIKE
-                    // Jika id_bu = 11: HANYA msp LIKE '11-SO%'
-                    // Jika id_bu = 21: msp LIKE '21-SO%' OR msp LIKE 'SP%'
-                    ...(parseInt(filterBuId) == 21 ? [
+        // Siapkan filter divisi/id_bu terlebih dahulu (filter utama yang HARUS selalu diterapkan)
+        let divisiBuFilter = {};
+        if (isSalesOrRcadmin && filterBuId) {
+            if (isRcadmin && parseInt(filterBuId) == 21) {
+                // rcadmin dengan id_bu=21: HANYA boleh melihat 21-SO% atau SP%
+                // Pastikan msp HANYA dimulai dengan '21-SO' atau 'SP', tidak boleh yang lain
+                divisiBuFilter = {
+                    [Op.or]: [
                         { msp: { [Op.like]: `21-SO%` } },
                         { msp: { [Op.like]: `SP%` } }
-                    ] : [
-                        { msp: { [Op.like]: `${filterBuId}-SO%` } }
-                    ]),
-                    // Untuk sales/rcadmin, juga cek id_bu di m_pengadaan dan id_bu dari user sales
-                    // Hanya untuk data yang tidak mengikuti pola XX-SO- atau SP-
-                    Sequelize.literal(`(
-                        m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
-                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                        AND m_pengadaan.msp NOT LIKE 'SP%'
-                    )`),
-                    Sequelize.literal(`(
-                        EXISTS (
-                            SELECT 1 FROM users 
-                            WHERE users.id = m_pengadaan.id_sales 
-                            AND users.id_bu = ${mysql.escape(filterBuId)}
-                        )
-                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                        AND m_pengadaan.msp NOT LIKE 'SP%'
-                    )`)
-                ]
-            } : {}),
+                    ]
+                };
+            } else if (isSales) {
+                // sales: HANYA msp LIKE '{id_bu}-SO%' (tidak termasuk SP%)
+                divisiBuFilter = {
+                    [Op.or]: [
+                        { msp: { [Op.like]: `${filterBuId}-SO%` } },
+                        Sequelize.literal(`(
+                            m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`),
+                        Sequelize.literal(`(
+                            EXISTS (
+                                SELECT 1 FROM users 
+                                WHERE users.id = m_pengadaan.id_sales 
+                                AND users.id_bu = ${mysql.escape(filterBuId)}
+                            )
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`)
+                    ]
+                };
+            } else {
+                // Default untuk rcadmin dengan id_bu selain 21: hanya {id_bu}-SO%
+                divisiBuFilter = {
+                    [Op.or]: [
+                        { msp: { [Op.like]: `${filterBuId}-SO%` } },
+                        Sequelize.literal(`(
+                            m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`),
+                        Sequelize.literal(`(
+                            EXISTS (
+                                SELECT 1 FROM users 
+                                WHERE users.id = m_pengadaan.id_sales 
+                                AND users.id_bu = ${mysql.escape(filterBuId)}
+                            )
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`)
+                    ]
+                };
+            }
+        }
+
+        // Debug: log filter divisi/id_bu
+        if (isSalesOrRcadmin && filterBuId) {
+            console.log('[getSpListAll2] Filter divisi/id_bu:', {
+                divisi: userDivisi,
+                id_bu: filterBuId,
+                filter: divisiBuFilter
+            });
+        }
+        
+        // Siapkan kondisi utama - jika ada filter divisi/id_bu, gunakan [Op.and] untuk memastikan semua kondisi terpenuhi
+        const otherConditions = {
             // Filter codeBrench: filter berdasarkan code_bu_brench
             // Mempertimbangkan: id_bu_branch di m_pengadaan ATAU code_bu_brench dari user sales
             ...(req.query.codeBrench ? {
@@ -13707,9 +13775,14 @@ exports.getSpListAll2 = async (req, res) => {
             ...(req.query.startDate && req.query.endDate ? {
                 tgl_pickup: { [Op.between]: [req.query.startDate, req.query.endDate] }
             } : {}),
+            // Filter keyword - jika ada filter divisi/id_bu, jangan cari keyword di msp karena sudah di-filter
             ...(req.query.keyword && {
                 [Op.or]: [
-                    { msp: { [Op.like]: `%${req.query.keyword}%` } }, // No SO
+                    // Hanya cari keyword di msp jika TIDAK ada filter divisi/id_bu
+                    ...(Object.keys(divisiBuFilter).length === 0 ? [
+                        { msp: { [Op.like]: `%${req.query.keyword}%` } }
+                    ] : []),
+                    // Cari keyword di field lain (selalu berlaku)
                     Sequelize.literal(`EXISTS (
                         SELECT 1 FROM customer 
                         WHERE customer.id_customer = m_pengadaan.id_customer 
@@ -13736,6 +13809,19 @@ exports.getSpListAll2 = async (req, res) => {
                 ]
             })
         };
+
+        // Gabungkan kondisi: jika ada filter divisi/id_bu, gunakan [Op.and] untuk memastikan semua kondisi terpenuhi
+        const queryConditions = Object.keys(divisiBuFilter).length > 0 ? {
+            [Op.and]: [
+                divisiBuFilter,
+                otherConditions
+            ]
+        } : otherConditions;
+
+        // Debug: log query conditions
+        if (isSalesOrRcadmin && filterBuId && req.query.keyword) {
+            console.log('[getSpListAll2] Query conditions:', JSON.stringify(queryConditions, null, 2));
+        }
 
         // Optimasi query utama dengan JOIN yang diperlukan
         const options = {
@@ -14075,7 +14161,6 @@ exports.getSpListAll2 = async (req, res) => {
 //     }
 // };
 
-
 exports.getSpListAllDetail = async (req, res) => {
     try {
 
@@ -14349,7 +14434,7 @@ exports.getSpListAllDetail = async (req, res) => {
 
                 const orderDate = (getPengadaan.map((i) => i.tgl_order) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_order).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_order).format("DD-MM-YYYY HH:mm:ss")));
                 const pickupDate = (getPengadaan.map((i) => i.tgl_pickup) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")));
-                const bongkarDate = (getDetail.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getDetail.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : '-')
+                const bongkarDate = (getPengadaan.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")))
                 const jenisBarang = (getPengadaan.map((i) => i.jenis_barang) != '' ? getPengadaan.map((i) => i.jenis_barang) : getDetail.map((i) => i.m_pengadaan.jenis_barang));
                 const asuransi = (getPengadaan.map((i) => i.asuransi) != '' ? getPengadaan.map((i) => i.asuransi) : getDetail.map((i) => i.m_pengadaan.asuransi));
                 const getGl = getDetail.map((i) => i.m_pengadaan.gl == null ? "-" : i.m_pengadaan.fullname)
@@ -14984,7 +15069,7 @@ exports.getSpListAllDetail_vico = async (req, res) => {
 
                 const orderDate = (getPengadaan.map((i) => i.tgl_order) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_order).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_order).format("DD-MM-YYYY HH:mm:ss")));
                 const pickupDate = (getPengadaan.map((i) => i.tgl_pickup) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_pickup).format("DD-MM-YYYY HH:mm:ss")));
-                const bongkarDate = (getDetail.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getDetail.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : '-')
+                const bongkarDate = (getPengadaan.map((i) => i.tgl_bongkar) != '0000-00-00 00:00:00' ? getPengadaan.map((i) => core.moment(i.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")) : getDetail.map((i) => core.moment(i.m_pengadaan.tgl_bongkar).format("DD-MM-YYYY HH:mm:ss")))
                 const jenisBarang = (getPengadaan.map((i) => i.jenis_barang) != '' ? getPengadaan.map((i) => i.jenis_barang) : getDetail.map((i) => i.m_pengadaan.jenis_barang));
                 const asuransi = (getPengadaan.map((i) => i.asuransi) != '' ? getPengadaan.map((i) => i.asuransi) : getDetail.map((i) => i.m_pengadaan.asuransi));
                 const getGl = getDetail.map((i) => i.m_pengadaan.gl == null ? "-" : i.m_pengadaan.fullname)
@@ -14998,22 +15083,12 @@ exports.getSpListAllDetail_vico = async (req, res) => {
 
                 // Determine marketing: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
                 const marketing = getPengadaan.map((i) => {
-                    // Cek apakah code_sales ada dan tidak kosong
-                    const hasCodeSales = i.code_sales != null && i.code_sales !== "" && String(i.code_sales).trim() !== "";
-                    
-                    if (hasCodeSales && i.salesDataVico != null && i.salesDataVico.nama_sales) {
-                        // Jika code_sales ada, ambil dari m_sales
-                        return i.salesDataVico.nama_sales;
-                    } else {
-                        // Jika code_sales null atau empty, ambil dari users
-                        if (i.user != null && i.user.nama_lengkap) {
-                            return i.user.nama_lengkap;
-                        }
-                        if (i.users != null && i.users.nama_lengkap) {
-                            return i.users.nama_lengkap;
-                        }
-                        return "-";
+                    if (i.code_sales != null && i.code_sales !== "" && i.salesDataVico != null) {
+                        return i.salesDataVico.nama_sales || "-";
+                    } else if (i.user != null) {
+                        return i.user.nama_lengkap || "-";
                     }
+                    return "-";
                 })
                 const branch = getPengadaan.map((i) => i.user?.brench?.wilayah || "-")
                 const getService = getPengadaan.map((i) => i.service)
@@ -15854,6 +15929,37 @@ exports.getLostSales = async (req, res) => {
             }
         )
         if (getUser) {
+            // Build additional where conditions for filters
+            const additionalWhereConditions = [];
+            
+            // Filter by keyword - search in msp, nama_lengkap (sales), and nama_perusahaan (customer)
+            if (req.query.keyword) {
+                additionalWhereConditions.push(
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM m_pengadaan mp
+                        LEFT JOIN users u ON u.id = mp.id_sales
+                        LEFT JOIN customer c ON c.id_customer = mp.id_customer
+                        WHERE mp.id_mp = m_status_order.id_mp
+                        AND (
+                            mp.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                            OR u.nama_lengkap LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                            OR c.nama_perusahaan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                        )
+                    )`)
+                );
+            }
+
+            // Filter by id_bu_brench - filter through users (sales)
+            if (req.query.id_bu_brench) {
+                additionalWhereConditions.push(
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM m_pengadaan mp
+                        INNER JOIN users u ON u.id = mp.id_sales
+                        WHERE mp.id_mp = m_status_order.id_mp
+                        AND u.id_bu_brench = ${mysql.escape(req.query.id_bu_brench)}
+                    )`)
+                );
+            }
 
             const getData = await models.m_status_order.findAndCountAll(
                 {
@@ -15876,7 +15982,8 @@ exports.getLostSales = async (req, res) => {
                                         ]
                                     }
                                 ]
-                            }
+                            },
+                            ...additionalWhereConditions
                         ]
                     },
 
@@ -15886,7 +15993,7 @@ exports.getLostSales = async (req, res) => {
                     include: [
                         {
                             model: models.m_pengadaan,
-                            // where:
+                            required: false,
                             include: [
                                 {
                                     model: models.m_pengadaan_detail,
@@ -15963,10 +16070,10 @@ exports.getLostSales = async (req, res) => {
                         sp: item.m_pengadaan == null ? "-" : item.m_pengadaan.msp,
                         salesName: item.m_pengadaan == null ? "-" : item.m_pengadaan.user?.nama_lengkap,
                         perusahaan: item.m_pengadaan == null ? "-" : item.m_pengadaan.customer?.nama_perusahaan,
-                        kendaraan: detail0 == null ? "-" : detail0.kendaraan,
+                        kendaraan: (detail0 == null || !detail0.kendaraan) ? "-" : detail0.kendaraan,
                         pickupDate: item.m_pengadaan == null ? "-" : core.moment(item.m_pengadaan.tgl_pickup).format('YYYY-MM-DD HH:mm:ss'),
                         total: item.m_pengadaan == null ? "-" : item.m_pengadaan.total_keseluruhan,
-                        tujuan: getTujuan == null ? "-" : getTujuan.alamat_detail,
+                        tujuan: (getTujuan == null || !getTujuan.alamat_detail) ? "-" : getTujuan.alamat_detail,
                         chatMkt: chatMkt?.massage || "-",
                         chatOps: chatOps?.massage || "-",
                         chatPurch: chatPurch?.massage || "-"

@@ -1487,6 +1487,9 @@ exports.getReportCustomer = async (req, res) => {
         if (!models.m_pengadaan.associations.adminName) {
             models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_admin', as: 'adminName' });
         }
+        if (!models.m_pengadaan.associations.salesDataReport) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataReport' });
+        }
         // models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_sales', });
         models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
         // models.m_pengadaan.belongsTo(models.m_chat, { targetKey: 'id_mp', foreignKey: 'id_mp' });
@@ -1584,6 +1587,12 @@ exports.getReportCustomer = async (req, res) => {
                             model: models.users,
                             as: "adminName",
                             attributes: ['nama_lengkap']
+                        },
+                        {
+                            model: models.m_sales,
+                            as: 'salesDataReport',
+                            attributes: ['nama_sales'],
+                            required: false
                         },
                         {
                             model: models.customer,
@@ -1750,12 +1759,20 @@ exports.getReportCustomer = async (req, res) => {
 
                     const kendaraan = details.length > 0 ? details[0].kendaraan : '-';
 
+                    // Determine salesName: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+                    let salesName = "-";
+                    if (item.code_sales != null && item.code_sales !== "" && item.salesDataReport != null) {
+                        salesName = item.salesDataReport.nama_sales || "-";
+                    } else if (item.salesName != null) {
+                        salesName = item.salesName.nama_lengkap || "-";
+                    }
+                    
                     const resultItem = {
                         no: startIndex + resultIndex++,
                         idmp: item.id_mp,
                         sp: item.msp,
                         spk: item.mspk,
-                        salesName: item.salesName == null ? "-" : item.salesName.nama_lengkap,
+                        salesName: salesName,
                         adminName: item.adminName == null ? "-" : item.adminName.nama_lengkap,
                         perusahaan: item.customer?.nama_perusahaan || '-',
                         destination: destinationStr || '-',
