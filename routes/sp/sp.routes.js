@@ -34,6 +34,7 @@ router.get('/get-select-do', authentication, spController.getSelectCancelDo);
 router.post('/cancel-sp', authentication, spController.cancelDoSp);
 router.get('/get-massage-do-detail', authentication, spController.getMassageDoDetail);
 router.get('/get-list-cancel-do', authentication, spController.getCancelDoList);
+router.get('/get-all-massage-cost', authentication, spController.getAllMassageCost);
 
 router.post('/create-massage-do', authentication, spController.createDoMassage);
 router.post('/del-massage-do', authentication, spController.deleteDoMassage);

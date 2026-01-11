@@ -16644,6 +16644,105 @@ const updatePengadaanDetailCost = async (id_mpd, cost_type, amount, is_ditagihka
     }
 };
 
+// Helper function untuk generate no_cost
+// Format:
+//   {id_bu}-BY-{YY}-{000001}
+// Contoh:
+//   id_bu = 11 => 11-BY-26-000001
+//   id_bu = 21 => 21-BY-26-000001
+// - YY = 2 digit tahun berjalan
+// - 000001 = running number 6 digit per BU yang reset setiap tahun berganti
+const generateNoCost = async (id_bu) => {
+    try {
+        if (!id_bu) {
+            throw new Error('id_bu tidak ditemukan untuk MSM terkait');
+        }
+
+        const now = new Date();
+        const currentYear = now.getFullYear().toString().slice(-2); // 2 digit tahun berjalan, contoh: 2026 -> "26"
+
+        console.log('=== GENERATING NO_COST ===');
+        console.log('Current year (YY):', currentYear);
+        console.log('id_bu:', id_bu);
+
+        // Cari nomor cost terakhir untuk BU ini (apapun tahunnya),
+        // nanti dicek apakah tahunnya sama dengan tahun berjalan.
+        let latestCost = null;
+        try {
+            const result = await models.m_sm_cost.findOne({
+                where: {
+                    no_cost: {
+                        [Op.like]: `${id_bu}-BY-%`
+                    }
+                },
+                order: [['id_msm_cost', 'DESC']]
+            });
+
+            if (result && result.no_cost) {
+                latestCost = result.no_cost;
+                console.log('Latest no_cost found for BU:', latestCost);
+            }
+        } catch (queryError) {
+            console.error('Error querying latest no_cost:', queryError);
+            // Lanjut dengan default sequence jika query gagal
+        }
+
+        let nextSequence = 1;
+
+        if (latestCost) {
+            // Bentuk nomor lama yang diharapkan:
+            // {id_bu}-BY-{YY}-{000001}
+            // Contoh: "11-BY-26-000001"
+            // Index string (berdasarkan contoh di atas):
+            //  0-1 : id_bu (misal 11)
+            //  2   : '-'
+            //  3-4 : 'B','Y'
+            //  5   : '-'
+            //  6-7 : YY (tahun, misal "26")
+            //  8   : '-'
+            //  9-14: sequence "000001"
+
+            const lastYear = latestCost.substring(6, 8);
+
+            if (lastYear === currentYear) {
+                const sequencePart = latestCost.substring(9, 15);
+                const currentSequence = parseInt(sequencePart, 10);
+
+                console.log('Extracted sequence:', sequencePart, 'Parsed as:', currentSequence);
+
+                if (!isNaN(currentSequence) && currentSequence >= 0) {
+                    nextSequence = currentSequence + 1;
+                    console.log('Next sequence will be:', nextSequence);
+                }
+            } else {
+                console.log('Tahun pada nomor cost terakhir berbeda, reset sequence ke 000001');
+                nextSequence = 1;
+            }
+        } else {
+            console.log('No existing no_cost found for this BU, starting with 000001');
+        }
+
+        // Batas maksimum 6 digit: 999999
+        if (nextSequence > 999999) {
+            throw new Error('Nomor urut cost sudah mencapai batas maksimum (999999) untuk format 6 digit');
+        }
+
+        // Format sequence menjadi 6 digit dengan leading zero
+        const formattedSequence = nextSequence.toString().padStart(6, '0');
+        const finalNoCost = `${id_bu}-BY-${currentYear}-${formattedSequence}`;
+
+        console.log('Final generated no_cost:', finalNoCost);
+        console.log('=== END GENERATING NO_COST ===');
+
+        return finalNoCost;
+
+    } catch (error) {
+        console.error('Error generating no_cost:', error);
+        console.error('Error stack:', error.stack);
+        return null;
+    }
+};
+
 // CREATE - Tambah biaya detail SJ
 // exports.createSmCost = async (req, res) => {
 //     try {
@@ -16744,15 +16843,23 @@ exports.createSmCost = async (req, res) => {
             discount_type,
             discount_value,
             is_ditagihkan,
-            keterangan
+            keterangan,
+            customer,
+            driver,
+            tgl_cost
         } = req.body;
 
         // Validasi input
-        if (!id_msm || !cost_type || !qty || !price || is_ditagihkan === undefined) {
+        if (id_msm === undefined || id_msm === null || 
+            !cost_type || cost_type === '' || 
+            qty === undefined || qty === null || 
+            price === undefined || price === null || 
+            is_ditagihkan === undefined || 
+            !tgl_cost || tgl_cost === '') {
             return res.status(400).json({
                 status: {
                     code: 400,
-                    message: 'Semua field wajib diisi'
+                    message: 'Field id_msm, cost_type, qty, price, is_ditagihkan, dan tgl_cost wajib diisi'
                 }
             });
         }
@@ -16765,9 +16872,37 @@ exports.createSmCost = async (req, res) => {
         const taxAmount = tax ? (afterDiscount * tax / 100) : 0;
         const amount = afterDiscount + taxAmount;
 
+        // Ambil id_bu dari tabel m_sm berdasarkan id_msm
+        let idBuFromMsm = null;
+        try {
+            const msmData = await models.m_sm.findOne({
+                where: { id_msm },
+                attributes: ['id_bu']
+            });
+
+            if (msmData && msmData.id_bu) {
+                idBuFromMsm = msmData.id_bu;
+            }
+        } catch (e) {
+            console.error('Gagal mengambil id_bu dari m_sm:', e.message || e);
+        }
+
+        // Generate no_cost otomatis dengan format {id_bu}-BY-{YY}-{000001}
+        const no_cost = await generateNoCost(idBuFromMsm);
+
+        if (!no_cost) {
+            return res.status(500).json({
+                status: {
+                    code: 500,
+                    message: 'Gagal generate nomor cost'
+                }
+            });
+        }
+
         // Create m_sm_cost
         const newCost = await models.m_sm_cost.create({
             id_msm: id_msm,
+            no_cost: no_cost,
             cost_type: cost_type,
             qty: qty,
             price: price,
@@ -16778,6 +16913,9 @@ exports.createSmCost = async (req, res) => {
             is_approve: '1', // Default status: pending
             amount: amount,
             keterangan: keterangan || null,
+            customer: customer || null,
+            driver: driver || null,
+            tgl_cost: tgl_cost,
             created_by: req.user.id,
             created_at: new Date(),
             modified_at: new Date()
@@ -17094,15 +17232,19 @@ exports.updateSmCost = async (req, res) => {
             tax,
             discount_type,
             discount_value,
-            is_ditagihkan
+            is_ditagihkan,
+            keterangan,
+            customer,
+            driver,
+            tgl_cost
         } = req.body;
 
         // Validasi input
-        if (!cost_type || !qty || !price || !tax || !discount_value || is_ditagihkan === undefined) {
+        if (!cost_type || !qty || !price || is_ditagihkan === undefined || !tgl_cost) {
             return res.status(400).json({
                 status: {
                     code: 400,
-                    message: 'Semua field wajib diisi'
+                    message: 'Field cost_type, qty, price, is_ditagihkan, dan tgl_cost wajib diisi'
                 }
             });
         }
@@ -17123,10 +17265,10 @@ exports.updateSmCost = async (req, res) => {
 
         // Hitung amount baru
         const subtotal = qty * price;
-        const discountAmount = discount_type === 'percentage' ? 
-            (subtotal * discount_value / 100) : discount_value;
+        const discountAmount = discount_value ? (discount_type === 'percentage' ? 
+            (subtotal * discount_value / 100) : discount_value) : 0;
         const afterDiscount = subtotal - discountAmount;
-        const taxAmount = afterDiscount * tax / 100;
+        const taxAmount = tax ? (afterDiscount * tax / 100) : 0;
         const amount = afterDiscount + taxAmount;
 
         // Update m_sm_cost
@@ -17134,11 +17276,15 @@ exports.updateSmCost = async (req, res) => {
             cost_type: cost_type,
             qty: qty,
             price: price,
-            tax: tax,
+            tax: tax || null,
             discount_type: discount_type,
-            discount_value: discount_value,
+            discount_value: discount_value || null,
             is_ditagihkan: is_ditagihkan,
             amount: amount,
+            keterangan: keterangan || null,
+            customer: customer || null,
+            driver: driver || null,
+            tgl_cost: tgl_cost,
             modified_at: new Date()
         }, {
             where: { id_msm_cost: id_msm_cost }
@@ -17524,6 +17670,74 @@ exports.gantiAlamat = async (req, res) => {
                     }
                 };
             }
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        };
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req);
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output);
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+    }
+};
+
+// GET All Massage Cost dengan status 1
+exports.getAllMassageCost = async (req, res) => {
+    let output = {};
+    try {
+        const getUser = await models.users.findOne({
+            where: {
+                id: req.user.id
+            }
+        });
+
+        if (getUser) {
+            const getMassageCost = await models.massage_cost.findAll({
+                where: {
+                    status: 1
+                },
+                order: [['id_massage_cost', 'ASC']]
+            });
+
+            if (getMassageCost) {
+                output = {
+                    status: {
+                        code: 200,
+                        message: 'Success get data massage cost'
+                    },
+                    data: {
+                        massageCost: getMassageCost.map((item) => {
+                            return {
+                                id: item.id_massage_cost,
+                                massage: item.massage,
+                                status: item.status
+                            };
+                        })
+                    }
+                };
+            } else {
+                output = {
+                    status: {
+                        code: 404,
+                        message: 'Data tidak ditemukan'
+                    }
+                };
+            }
+        } else {
+            output = {
+                status: {
+                    code: 401,
+                    message: 'Unauthorized'
+                }
+            };
         }
     } catch (error) {
         output = {

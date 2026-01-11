@@ -594,9 +594,6 @@ exports.smDetail = async (req, res) => {
         models.m_sm.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench' });
 
 
-        const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
-
-
         const getUser = await models.users.findOne(
             {
                 where: {
@@ -605,55 +602,64 @@ exports.smDetail = async (req, res) => {
             }
         )
         if (getUser) {
+            // Build where condition for detail endpoint - should return only 1 record
+            const whereCondition = {
+                is_deleted: 0
+            };
+
+            // Build Op.or condition only if at least one parameter is provided
+            const orConditions = [];
+            if (req.query.id_msm && req.query.id_msm !== '') {
+                orConditions.push({ id_msm: req.query.id_msm });
+            }
+            if (req.query.id_mpd && req.query.id_mpd !== '') {
+                orConditions.push({ id_mpd: req.query.id_mpd });
+            }
+
+            // Only add Op.or if we have at least one condition
+            if (orConditions.length > 0) {
+                whereCondition[Op.or] = orConditions;
+            } else {
+                // If no id_msm or id_mpd provided, return error
+                output = {
+                    status: {
+                        code: 400,
+                        message: 'id_msm or id_mpd parameter is required'
+                    }
+                };
+                const errorsFromMiddleware = await customErrorMiddleware(req);
+                if (!errorsFromMiddleware) {
+                    return res.status(output.status.code).send(output);
+                } else {
+                    return res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+                }
+            }
+
+            // Add optional filters (for detail endpoint, these are additional filters)
+            if (req.query.id_bu) {
+                whereCondition.id_bu = req.query.id_bu;
+            }
+            if (req.query.id_bu_brench) {
+                whereCondition.id_bu_brench = req.query.id_bu_brench;
+            }
+            if (req.query.kodeCabang) {
+                whereCondition.msm = { [Op.like]: `%${req.query.kodeCabang}%` };
+            }
+            if (req.query.mitra1) {
+                whereCondition.id_mitra_pickup = req.query.mitra1;
+            }
+            if (req.query.mitra2) {
+                whereCondition.id_mitra = req.query.mitra2;
+            }
+            if (req.query.mitra3) {
+                whereCondition.id_mitra_2 = req.query.mitra3;
+            }
+
             const getData = await models.m_sm.findAll(
                 {
                     order: [['id_msm', 'desc']],
-                    where: {
-                        [Op.or]: [
-                            {
-                                id_msm: req.query.id_msm,
-                            },
-
-                            {
-                                id_mpd: req.query.id_mpd,
-                            }
-                        ],
-
-                        is_deleted: 0,
-                        ...req.query.id_bu ? {
-                            id_bu: req.query.id_bu
-                        } : {},
-                        ...req.query.id_bu_brench ? {
-                            id_bu_brench: req.query.id_bu_brench
-
-                        } : {},
-                        ...req.query.kodeCabang ? {
-                            msm: { [Op.like]: `%${req.query.kodeCabang}%` }
-                        } : {},
-                        ...req.query.mitra1 ? {
-                            id_mitra_pickup: req.query.mitra1
-                        } : {},
-                        ...req.query.mitra2 ? {
-                            id_mitra: req.query.mitra2
-                        } : {},
-                        ...req.query.mitra3 ? {
-                            id_mitra_2: req.query.mitra3
-                        } : {},
-                        ...req.query.keyword ? {
-                            [Op.or]: [
-                                {
-                                    msm: {
-                                        [Op.like]: `%${req.query.keyword}%`
-                                    },
-
-                                },
-
-
-                            ]
-                        } : {}
-                    },
-                    limit: limit,
-                    offset: offset,
+                    where: whereCondition,
+                    limit: 1, // Detail endpoint should return only 1 record
                     include: [
                         {
                             model: models.m_bu
@@ -747,6 +753,22 @@ exports.smDetail = async (req, res) => {
             )
             // console.log("🚀 ~ file: sm.controller.js:732 ~ exports.smDetail= ~ getData:", getData[0].id_mpd)
 
+            // Check if data exists
+            if (!getData || getData.length === 0) {
+                output = {
+                    status: {
+                        code: 404,
+                        message: 'Data not found'
+                    }
+                };
+                const errorsFromMiddleware = await customErrorMiddleware(req);
+                if (!errorsFromMiddleware) {
+                    return res.status(output.status.code).send(output);
+                } else {
+                    return res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+                }
+            }
+
             const getidPickup = await models.m_pengadaan_detail.findOne(
                 {
                     where: {
@@ -755,14 +777,14 @@ exports.smDetail = async (req, res) => {
                 }
             )
 
-            if (getData) {
-                const getAlamat = await models.alamat.findOne(
+            if (getData && getData.length > 0) {
+                const getAlamat = getidPickup ? await models.alamat.findOne(
                     {
                         where: {
                             id: getidPickup.id_almuat
                         }
                     }
-                )
+                ) : null;
 
                 const getSupirNumber1 = await models.m_driver.findOne(
                     {
@@ -826,7 +848,7 @@ exports.smDetail = async (req, res) => {
                         pickupDate: core.moment(item.m_pengadaan_detail?.m_pengadaan?.tgl_pickup).format("YYYY-MM-DD"),
                         destination: (item.m_pengadaan_detail?.muat?.kota == null ? item.m_pengadaan_detail?.muat?.kota?.kotaMuat?.nama_kota : item.m_pengadaan_detail?.muat?.kota) + "-" + (item.m_pengadaan_detail?.bongkar?.kota == null ? item.m_pengadaan_detail?.bongkar?.kota?.kotaBongkar?.nama_kota : item.m_pengadaan_detail?.bongkar?.kota),
                         tglPickup: core.moment(item.tgl_muat).format("YYYY-MM-DD HH:mm:ss") == null ? "-" : core.moment(item.tgl_muat).format("YYYY-MM-DD HH:mm:ss"),
-                        pickupAddress: getAlamat.alamat,
+                        pickupAddress: getAlamat?.alamat || "-",
                         kapal: item.nama_kapal == null ? "-" : item.nama_kapal,
                         weight: item.m_pengadaan_detail == null ? "-" : item.m_pengadaan_detail.berat,
                         koli: item.m_pengadaan_detail == null ? "-" : item.m_pengadaan_detail.koli,

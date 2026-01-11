@@ -306,6 +306,7 @@ var _m_wil_kota = require("./m_wil_kota");
 var _m_wil_provinsi = require("./m_wil_provinsi");
 var _mainmenu = require("./mainmenu");
 var _massage_do = require("./massage_do");
+var _massage_cost = require("./massage_cost");
 var _mitra = require("./mitra");
 var _mitra_chat = require("./mitra_chat");
 var _mitra_complaint = require("./mitra_complaint");
@@ -692,6 +693,7 @@ function initModels(sequelize) {
   var m_wil_provinsi = _m_wil_provinsi(sequelize, DataTypes);
   var mainmenu = _mainmenu(sequelize, DataTypes);
   var massage_do = _massage_do(sequelize, DataTypes);
+  var massage_cost = _massage_cost(sequelize, DataTypes);
   var mitra = _mitra(sequelize, DataTypes);
   var mitra_chat = _mitra_chat(sequelize, DataTypes);
   var mitra_complaint = _mitra_complaint(sequelize, DataTypes);
@@ -1105,6 +1107,7 @@ function initModels(sequelize) {
     m_wil_provinsi,
     mainmenu,
     massage_do,
+    massage_cost,
     mitra,
     mitra_chat,
     mitra_complaint,

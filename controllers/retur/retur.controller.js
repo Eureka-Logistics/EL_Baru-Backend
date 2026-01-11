@@ -520,9 +520,25 @@ exports.createRetur = async (req, res) => {
     const idAdminX = toNullIfEmpty(id_admin);
     const pihakDibebankanX = toNullIfEmpty(pihak_dibebankan);
     const createdByNameX = toNullIfEmpty(created_by_name);
+    
+    // Ambil id_bu dari tabel m_sm berdasarkan id_msm
+    let idBuFromMsm = null;
+    try {
+      const msmData = await models.m_sm.findOne({
+        where: { id_msm },
+        attributes: ['id_bu']
+      });
 
-    // Generate no_retur automatically with new format
-    const no_retur = await generateNoRetur();
+      if (msmData && msmData.id_bu) {
+        idBuFromMsm = msmData.id_bu;
+      }
+    } catch (e) {
+      console.error('Gagal mengambil id_bu dari m_sm:', e.message || e);
+    }
+
+    // Generate no_retur automatically with requested format:
+    // {id_bu}-RT-{YY}-{000001}, reset setiap tahun dan increment per BU
+    const no_retur = await generateNoRetur(idBuFromMsm);
 
     if (!no_retur) {
       return res.status(500).json({
@@ -653,73 +669,90 @@ exports.createRetur = async (req, res) => {
 };
 
 // Helper function to generate no_retur automatically
-async function generateNoRetur() {
+// Format yang diminta:
+//   {id_bu}-RT-{YY}-{000001}
+// Contoh:
+//   id_bu = 11 => 11-RT-26-000001
+//   id_bu = 21 => 21-RT-26-000001
+// - YY = 2 digit tahun berjalan
+// - 000001 = running number 6 digit per BU yang reset setiap tahun berganti
+async function generateNoRetur(id_bu) {
   try {
+    if (!id_bu) {
+      throw new Error('id_bu tidak ditemukan untuk MSM terkait');
+    }
+
     const now = new Date();
-    const currentYear = now.getFullYear().toString().slice(-2); // Get last 2 digits of year
-    const currentMonth = (now.getMonth() + 1).toString().padStart(2, '0'); // Get month (01-12)
-    
+    const currentYear = now.getFullYear().toString().slice(-2); // 2 digit tahun berjalan, contoh: 2026 -> "26"
+
     console.log('=== GENERATING NO_RETUR ===');
-    console.log('Current year:', currentYear);
-    console.log('Current month:', currentMonth);
-    
-    // Build prefix for current year and month: RT{YY}{MM}
-    const yearMonthPrefix = `RT${currentYear}${currentMonth}`;
-    
-    // Find the latest retur number for this year and month to continue the sequence
+    console.log('Current year (YY):', currentYear);
+    console.log('id_bu:', id_bu);
+
+    // Cari nomor retur terakhir untuk BU ini (apapun tahunnya),
+    // nanti dicek apakah tahunnya sama dengan tahun berjalan.
     let latestRetur = null;
     try {
       const result = await db.query(
         `SELECT no_retur FROM m_sm_retur 
          WHERE no_retur LIKE ? 
-         ORDER BY no_retur DESC 
+         ORDER BY id_msm_retur DESC 
          LIMIT 1`,
-        [`${yearMonthPrefix}%`]
+        [`${id_bu}-RT-%`]
       );
       
       if (result && Array.isArray(result) && result.length > 0 && result[0].no_retur) {
         latestRetur = result[0].no_retur;
-        console.log('Latest retur found for current month:', latestRetur);
+        console.log('Latest retur found for BU:', latestRetur);
       }
     } catch (queryError) {
       console.error('Error querying latest retur:', queryError);
-      // Continue with default sequence if query fails
+      // Lanjut dengan default sequence jika query gagal
     }
 
     let nextSequence = 1;
 
     if (latestRetur) {
-      // Extract the sequence from the latest retur
-      // Format: RT{YY}{MM}{SS} where SS is 2-digit sequence
-      // Example: RT250101 means RT + 25(year) + 01(month) + 01(sequence)
-      const noReturLength = latestRetur.length;
-      
-      if (noReturLength >= 8) {
-        // Extract last 2 digits as sequence
-        const sequencePart = latestRetur.substring(6, 8);
+      // Bentuk nomor lama yang diharapkan:
+      // {id_bu}-RT-{YY}-{000001}
+      // Contoh: "11-RT-26-000001"
+      // Index string (berdasarkan contoh di atas):
+      //  0-1 : id_bu (misal 11)
+      //  2   : '-'
+      //  3-4 : 'RT'
+      //  5   : '-'
+      //  6-7 : YY (tahun, misal "26")
+      //  8   : '-'
+      //  9-14: sequence "000001"
+
+      const lastYear = latestRetur.substring(6, 8);
+
+      if (lastYear === currentYear) {
+        const sequencePart = latestRetur.substring(9, 15);
         const currentSequence = parseInt(sequencePart, 10);
-        
+
         console.log('Extracted sequence:', sequencePart, 'Parsed as:', currentSequence);
-        
+
         if (!isNaN(currentSequence) && currentSequence >= 0) {
           nextSequence = currentSequence + 1;
           console.log('Next sequence will be:', nextSequence);
         }
       } else {
-        console.log('Latest retur format unexpected, starting with sequence 01');
+        console.log('Tahun pada nomor retur terakhir berbeda, reset sequence ke 000001');
+        nextSequence = 1;
       }
     } else {
-      console.log('No existing retur found for current month, starting with 01');
+      console.log('No existing retur found for this BU, starting with 000001');
     }
 
-    // Check if sequence exceeds maximum (99 for 2-digit format)
-    if (nextSequence > 99) {
-      throw new Error('Nomor urut retur sudah mencapai batas maksimum (99) untuk format 2 digit');
+    // Batas maksimum 6 digit: 999999
+    if (nextSequence > 999999) {
+      throw new Error('Nomor urut retur sudah mencapai batas maksimum (999999) untuk format 6 digit');
     }
 
-    // Format the sequence with leading zeros (2 digits)
-    const formattedSequence = nextSequence.toString().padStart(2, '0');
-    const finalNoRetur = `${yearMonthPrefix}${formattedSequence}`;
+    // Format sequence menjadi 6 digit dengan leading zero
+    const formattedSequence = nextSequence.toString().padStart(6, '0');
+    const finalNoRetur = `${id_bu}-RT-${currentYear}-${formattedSequence}`;
     
     console.log('Final generated no_retur:', finalNoRetur);
     console.log('=== END GENERATING ===');

@@ -35,6 +35,10 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: true
     },
+    no_cost: {
+      type: DataTypes.STRING(50),
+      allowNull: true
+    },
     is_ditagihkan: {
       type: DataTypes.INTEGER,
       allowNull: false
@@ -51,6 +55,18 @@ module.exports = function(sequelize, DataTypes) {
     keterangan: {
       type: DataTypes.TEXT,
       allowNull: true
+    },
+    customer: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    driver: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    tgl_cost: {
+      type: DataTypes.DATE,
+      allowNull: false
     },
     created_by: {
       type: DataTypes.INTEGER,
