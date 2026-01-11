@@ -11847,13 +11847,49 @@ exports.getListWaitingAkunting = async (req, res) => {
                                 {
                                     msp: {
                                         [Op.like]: `%${req.query.keyword}%`
-                                    },
-
+                                    }
                                 },
-
-
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM users u
+                                    WHERE u.id = m_pengadaan.id_sales
+                                    AND u.nama_lengkap LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`),
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM customer c
+                                    WHERE c.id_customer = m_pengadaan.id_customer
+                                    AND c.nama_perusahaan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`)
                             ]
-                        } : {}
+                        } : {},
+                        ...(req.query.customerId && { id_customer: req.query.customerId }),
+                        ...(req.query.sales && { id_sales: req.query.sales }),
+                        ...(req.query.buId && { id_bu: req.query.buId }),
+                        ...(req.query.startDate && req.query.endDate ? {
+                            tgl_pickup: { 
+                                [Op.between]: [
+                                    req.query.startDate.includes(' ') ? req.query.startDate : req.query.startDate + ' 00:00:00',
+                                    req.query.endDate.includes(' ') ? req.query.endDate : req.query.endDate + ' 23:59:59'
+                                ]
+                            }
+                        } : {}),
+                        // Filter codeBrench: filter berdasarkan code_bu_brench
+                        ...(req.query.codeBrench ? {
+                            [Op.or]: [
+                                // Cek id_bu_branch di m_pengadaan langsung
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM m_bu_brench b1
+                                    WHERE b1.id_bu_brench = m_pengadaan.id_bu_branch 
+                                    AND b1.code_bu_brench = ${mysql.escape(req.query.codeBrench)}
+                                )`),
+                                // Cek code_bu_brench dari user sales
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM users u
+                                    INNER JOIN m_bu_brench b2 ON b2.id_bu_brench = u.id_bu_brench
+                                    WHERE u.id = m_pengadaan.id_sales 
+                                    AND b2.code_bu_brench = ${mysql.escape(req.query.codeBrench)}
+                                )`)
+                            ]
+                        } : {})
                     },
                     group: [['msp']],
                     // group: [Sequelize.fn('m_pengadaaan', Sequelize.col('id_mp'))],
@@ -15961,6 +15997,20 @@ exports.getLostSales = async (req, res) => {
                 );
             }
 
+            // Filter by date range (from and to) - filter through m_pengadaan.tgl_pickup
+            if (req.query.from && req.query.to) {
+                const fromDate = req.query.from.includes(' ') ? req.query.from : req.query.from + ' 00:00:00';
+                const toDate = req.query.to.includes(' ') ? req.query.to : req.query.to + ' 23:59:59';
+                additionalWhereConditions.push(
+                    Sequelize.literal(`EXISTS (
+                        SELECT 1 FROM m_pengadaan mp
+                        WHERE mp.id_mp = m_status_order.id_mp
+                        AND mp.tgl_pickup >= ${mysql.escape(fromDate)}
+                        AND mp.tgl_pickup <= ${mysql.escape(toDate)}
+                    )`)
+                );
+            }
+
             const getData = await models.m_status_order.findAndCountAll(
                 {
                     // distinct: true,
@@ -17240,7 +17290,11 @@ exports.updateSmCost = async (req, res) => {
         } = req.body;
 
         // Validasi input
-        if (!cost_type || !qty || !price || is_ditagihkan === undefined || !tgl_cost) {
+        if (!cost_type || cost_type === '' || 
+            qty === undefined || qty === null || 
+            price === undefined || price === null || 
+            is_ditagihkan === undefined || 
+            !tgl_cost || tgl_cost === '') {
             return res.status(400).json({
                 status: {
                     code: 400,
