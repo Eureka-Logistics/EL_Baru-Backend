@@ -13705,11 +13705,6 @@ exports.getSpListAll2 = async (req, res) => {
             getUser.divisi === 'Rcadmin'
         );
 
-        // Cek divisi user (case insensitive)
-        const userDivisi = getUser ? (getUser.divisi || '').toLowerCase() : '';
-        const isSales = userDivisi === 'sales';
-        const isRcadmin = userDivisi === 'rcadmin';
-
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
 
         // Siapkan kondisi query dengan parameter yang dinamis
@@ -13717,74 +13712,51 @@ exports.getSpListAll2 = async (req, res) => {
         // Gunakan dari query parameter jika ada, jika tidak gunakan id_bu dari user yang login
         const filterBuId = isSalesOrRcadmin ? (req.query.buId || (getUser && getUser.id_bu ? getUser.id_bu : null)) : null;
         
-        // Siapkan filter divisi/id_bu terlebih dahulu (filter utama yang HARUS selalu diterapkan)
-        let divisiBuFilter = {};
-        if (isSalesOrRcadmin && filterBuId) {
-            if (isRcadmin && parseInt(filterBuId) == 21) {
-                // rcadmin dengan id_bu=21: HANYA boleh melihat 21-SO% atau SP%
-                // Pastikan msp HANYA dimulai dengan '21-SO' atau 'SP', tidak boleh yang lain
-                divisiBuFilter = {
-                    [Op.or]: [
+        const queryConditions = {
+            // tgl_order: {
+            //     [Op.gte]: new Date(new Date().getFullYear(), 0, 1) // Default tahun ini
+            // },
+            // ...(req.query.tglSp && {
+            //     tgl_order: {
+            //         [Op.gte]: new Date(req.query.tglSp + '-01-01'), // Awal tahun
+            //         [Op.lt]: new Date((parseInt(req.query.tglSp) + 1) + '-01-01') // Awal tahun berikutnya
+            //     }
+            // }),
+            // Filter: menampilkan data berdasarkan id_bu user yang login
+            // Hanya berlaku untuk divisi sales dan rcadmin
+            // Filter menggunakan LIKE pada field msp:
+            // - Jika id_bu = 11, maka HANYA msp LIKE '11-SO%' (tidak boleh 21-SO atau yang lain)
+            // - Jika id_bu = 21, maka msp LIKE '21-SO%' OR msp LIKE 'SP%'
+            // Untuk sales/rcadmin: juga filter berdasarkan id_bu di m_pengadaan dan id_bu dari user sales (hanya untuk data yang tidak mengikuti pola msp)
+            ...(isSalesOrRcadmin && filterBuId ? {
+                [Op.or]: [
+                    // Filter berdasarkan format msp menggunakan LIKE
+                    // Jika id_bu = 11: HANYA msp LIKE '11-SO%'
+                    // Jika id_bu = 21: msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                    ...(parseInt(filterBuId) == 21 ? [
                         { msp: { [Op.like]: `21-SO%` } },
                         { msp: { [Op.like]: `SP%` } }
-                    ]
-                };
-            } else if (isSales) {
-                // sales: HANYA msp LIKE '{id_bu}-SO%' (tidak termasuk SP%)
-                divisiBuFilter = {
-                    [Op.or]: [
-                        { msp: { [Op.like]: `${filterBuId}-SO%` } },
-                        Sequelize.literal(`(
-                            m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
-                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                            AND m_pengadaan.msp NOT LIKE 'SP%'
-                        )`),
-                        Sequelize.literal(`(
-                            EXISTS (
-                                SELECT 1 FROM users 
-                                WHERE users.id = m_pengadaan.id_sales 
-                                AND users.id_bu = ${mysql.escape(filterBuId)}
-                            )
-                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                            AND m_pengadaan.msp NOT LIKE 'SP%'
-                        )`)
-                    ]
-                };
-            } else {
-                // Default untuk rcadmin dengan id_bu selain 21: hanya {id_bu}-SO%
-                divisiBuFilter = {
-                    [Op.or]: [
-                        { msp: { [Op.like]: `${filterBuId}-SO%` } },
-                        Sequelize.literal(`(
-                            m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
-                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                            AND m_pengadaan.msp NOT LIKE 'SP%'
-                        )`),
-                        Sequelize.literal(`(
-                            EXISTS (
-                                SELECT 1 FROM users 
-                                WHERE users.id = m_pengadaan.id_sales 
-                                AND users.id_bu = ${mysql.escape(filterBuId)}
-                            )
-                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
-                            AND m_pengadaan.msp NOT LIKE 'SP%'
-                        )`)
-                    ]
-                };
-            }
-        }
-
-        // Debug: log filter divisi/id_bu
-        if (isSalesOrRcadmin && filterBuId) {
-            console.log('[getSpListAll2] Filter divisi/id_bu:', {
-                divisi: userDivisi,
-                id_bu: filterBuId,
-                filter: divisiBuFilter
-            });
-        }
-        
-        // Siapkan kondisi utama - jika ada filter divisi/id_bu, gunakan [Op.and] untuk memastikan semua kondisi terpenuhi
-        const otherConditions = {
+                    ] : [
+                        { msp: { [Op.like]: `${filterBuId}-SO%` } }
+                    ]),
+                    // Untuk sales/rcadmin, juga cek id_bu di m_pengadaan dan id_bu dari user sales
+                    // Hanya untuk data yang tidak mengikuti pola XX-SO- atau SP-
+                    Sequelize.literal(`(
+                        m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                        AND m_pengadaan.msp NOT LIKE 'SP%'
+                    )`),
+                    Sequelize.literal(`(
+                        EXISTS (
+                            SELECT 1 FROM users 
+                            WHERE users.id = m_pengadaan.id_sales 
+                            AND users.id_bu = ${mysql.escape(filterBuId)}
+                        )
+                        AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                        AND m_pengadaan.msp NOT LIKE 'SP%'
+                    )`)
+                ]
+            } : {}),
             // Filter codeBrench: filter berdasarkan code_bu_brench
             // Mempertimbangkan: id_bu_branch di m_pengadaan ATAU code_bu_brench dari user sales
             ...(req.query.codeBrench ? {
@@ -13811,14 +13783,9 @@ exports.getSpListAll2 = async (req, res) => {
             ...(req.query.startDate && req.query.endDate ? {
                 tgl_pickup: { [Op.between]: [req.query.startDate, req.query.endDate] }
             } : {}),
-            // Filter keyword - jika ada filter divisi/id_bu, jangan cari keyword di msp karena sudah di-filter
             ...(req.query.keyword && {
                 [Op.or]: [
-                    // Hanya cari keyword di msp jika TIDAK ada filter divisi/id_bu
-                    ...(Object.keys(divisiBuFilter).length === 0 ? [
-                        { msp: { [Op.like]: `%${req.query.keyword}%` } }
-                    ] : []),
-                    // Cari keyword di field lain (selalu berlaku)
+                    { msp: { [Op.like]: `%${req.query.keyword}%` } }, // No SO
                     Sequelize.literal(`EXISTS (
                         SELECT 1 FROM customer 
                         WHERE customer.id_customer = m_pengadaan.id_customer 
@@ -13845,19 +13812,6 @@ exports.getSpListAll2 = async (req, res) => {
                 ]
             })
         };
-
-        // Gabungkan kondisi: jika ada filter divisi/id_bu, gunakan [Op.and] untuk memastikan semua kondisi terpenuhi
-        const queryConditions = Object.keys(divisiBuFilter).length > 0 ? {
-            [Op.and]: [
-                divisiBuFilter,
-                otherConditions
-            ]
-        } : otherConditions;
-
-        // Debug: log query conditions
-        if (isSalesOrRcadmin && filterBuId && req.query.keyword) {
-            console.log('[getSpListAll2] Query conditions:', JSON.stringify(queryConditions, null, 2));
-        }
 
         // Optimasi query utama dengan JOIN yang diperlukan
         const options = {
