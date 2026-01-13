@@ -7915,10 +7915,111 @@ exports.getCancelDoList = async (req, res) => {
             {
                 where: {
                     id: req.user.id
-                }
+                },
+                attributes: ['id_bu', 'user_level', 'divisi']
             }
         )
         if (getUser) {
+            // Cek apakah user adalah sales atau rcadmin
+            const isSalesOrRcadmin = getUser && (
+                getUser.user_level == 2 || 
+                getUser.divisi === 'Sales' || 
+                getUser.divisi === 'sales' ||
+                getUser.divisi === 'rcadmin' ||
+                getUser.divisi === 'RCADMIN' ||
+                getUser.divisi === 'Rcadmin'
+            );
+
+            // Filter buId: hanya berlaku untuk divisi sales dan rcadmin
+            // Gunakan dari query parameter jika ada, jika tidak gunakan id_bu dari user yang login
+            const filterBuId = isSalesOrRcadmin ? (req.query.buId || (getUser && getUser.id_bu ? getUser.id_bu : null)) : null;
+
+            // Siapkan kondisi where untuk m_pengadaan
+            const mPengadaanWhere = {
+                status: "0",
+                ...req.query.year ? {
+                    tgl_pickup: {
+                        [Op.gte]: new Date(`${req.query.year}-01-01`),
+                        [Op.lt]: new Date(`${req.query.year}-12-31T23:59:59.999`)
+                    }
+                } : {},
+                // Filter: menampilkan data berdasarkan id_bu user yang login
+                // Hanya berlaku untuk divisi sales dan rcadmin
+                // Filter menggunakan LIKE pada field msp:
+                // - Jika id_bu = 11, maka HANYA msp LIKE '11-SO%' (tidak boleh 21-SO atau yang lain)
+                // - Jika id_bu = 21, maka msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                ...(isSalesOrRcadmin && filterBuId ? {
+                    [Op.or]: [
+                        // Filter berdasarkan format msp menggunakan LIKE
+                        // Jika id_bu = 11: HANYA msp LIKE '11-SO%'
+                        // Jika id_bu = 21: msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                        ...(parseInt(filterBuId) == 21 ? [
+                            { msp: { [Op.like]: `21-SO%` } },
+                            { msp: { [Op.like]: `SP%` } }
+                        ] : [
+                            { msp: { [Op.like]: `${filterBuId}-SO%` } }
+                        ]),
+                        // Untuk sales/rcadmin, juga cek id_bu di m_pengadaan dan id_bu dari user sales
+                        // Hanya untuk data yang tidak mengikuti pola XX-SO- atau SP-
+                        Sequelize.literal(`(
+                            m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`),
+                        Sequelize.literal(`(
+                            EXISTS (
+                                SELECT 1 FROM users 
+                                WHERE users.id = m_pengadaan.id_sales 
+                                AND users.id_bu = ${mysql.escape(filterBuId)}
+                            )
+                            AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                            AND m_pengadaan.msp NOT LIKE 'SP%'
+                        )`)
+                    ]
+                } : {}),
+                // Filter keyword: harus menghormati filter buId jika ada
+                ...(req.query.keyword && {
+                    [Op.or]: [
+                        // Filter keyword pada msp: harus menghormati filter buId jika ada
+                        // Jika buId=11: hanya cari keyword dalam msp yang match pattern "11-SO%"
+                        // Jika buId=21: hanya cari keyword dalam msp yang match pattern "21-SO%" atau "SP%"
+                        // Jika tidak ada buId filter: cari keyword di semua msp
+                        ...(isSalesOrRcadmin && filterBuId ? (
+                            parseInt(filterBuId) == 21 ? [
+                                // Untuk buId=21: keyword harus match dalam msp yang dimulai dengan "21-SO" atau "SP"
+                                Sequelize.literal(`(
+                                    m_pengadaan.msp LIKE '21-SO%' 
+                                    AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`),
+                                Sequelize.literal(`(
+                                    m_pengadaan.msp LIKE 'SP%' 
+                                    AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`)
+                            ] : [
+                                // Untuk buId selain 21 (misalnya 11): keyword harus match dalam msp yang dimulai dengan "{buId}-SO"
+                                Sequelize.literal(`(
+                                    m_pengadaan.msp LIKE ${mysql.escape(filterBuId + '-SO%')} 
+                                    AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`)
+                            ]
+                        ) : [
+                            // Jika tidak ada buId filter, cari keyword di semua msp
+                            { msp: { [Op.like]: `%${req.query.keyword}%` } }
+                        ]),
+                        Sequelize.literal(`EXISTS (
+                            SELECT 1 FROM customer 
+                            WHERE customer.id_customer = m_pengadaan.id_customer 
+                            AND customer.nama_perusahaan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                        )`), // Perusahaan
+                        Sequelize.literal(`EXISTS (
+                            SELECT 1 FROM users 
+                            WHERE users.id = m_pengadaan.id_sales 
+                            AND users.nama_lengkap LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                        )`) // Marketing
+                    ]
+                })
+            };
+
             const getDo = await models.m_pengadaan_do.findAndCountAll(
                 {
                     order: [["id", "desc"]],
@@ -7927,15 +8028,7 @@ exports.getCancelDoList = async (req, res) => {
                     include: [
                         {
                             model: models.m_pengadaan,
-                            where: {
-                                status: "0",
-                                ...req.query.year ? {
-                                    tgl_pickup: {
-                                        [Op.gte]: new Date(`${req.query.year}-01-01`),
-                                        [Op.lt]: new Date(`${req.query.year}-12-31T23:59:59.999`)
-                                    }
-                                } : {}
-                            },
+                            where: mPengadaanWhere,
                             include: [
                                 {
                                     model: models.customer
@@ -7996,7 +8089,7 @@ exports.getCancelDoList = async (req, res) => {
                         no: no++,
                         idmp: item.m_pengadaan.id_mp,
                         sp: item.m_pengadaan.msp,
-                        perusahaan: item.m_pengadaan.customer.nama_perusahaan,
+                        perusahaan: item.m_pengadaan.customer?.nama_perusahaan || "-",
                         marketing: marketing,
                         service: item.m_pengadaan.service,
                         pickupDate: core.moment(item.m_pengadaan.tgl_pickup).format('YYYY-MM-DD HH:MM:SS'),
@@ -13792,7 +13885,32 @@ exports.getSpListAll2 = async (req, res) => {
             } : {}),
             ...(req.query.keyword && {
                 [Op.or]: [
-                    { msp: { [Op.like]: `%${req.query.keyword}%` } }, // No SO
+                    // Filter keyword pada msp: harus menghormati filter buId jika ada
+                    // Jika buId=11: hanya cari keyword dalam msp yang match pattern "11-SO%"
+                    // Jika buId=21: hanya cari keyword dalam msp yang match pattern "21-SO%" atau "SP%"
+                    // Jika tidak ada buId filter: cari keyword di semua msp
+                    ...(isSalesOrRcadmin && filterBuId ? (
+                        parseInt(filterBuId) == 21 ? [
+                            // Untuk buId=21: keyword harus match dalam msp yang dimulai dengan "21-SO" atau "SP"
+                            Sequelize.literal(`(
+                                m_pengadaan.msp LIKE '21-SO%' 
+                                AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                            )`),
+                            Sequelize.literal(`(
+                                m_pengadaan.msp LIKE 'SP%' 
+                                AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                            )`)
+                        ] : [
+                            // Untuk buId selain 21 (misalnya 11): keyword harus match dalam msp yang dimulai dengan "{buId}-SO"
+                            Sequelize.literal(`(
+                                m_pengadaan.msp LIKE ${mysql.escape(filterBuId + '-SO%')} 
+                                AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                            )`)
+                        ]
+                    ) : [
+                        // Jika tidak ada buId filter, cari keyword di semua msp
+                        { msp: { [Op.like]: `%${req.query.keyword}%` } }
+                    ]),
                     Sequelize.literal(`EXISTS (
                         SELECT 1 FROM customer 
                         WHERE customer.id_customer = m_pengadaan.id_customer 

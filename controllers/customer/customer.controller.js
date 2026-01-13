@@ -3,6 +3,7 @@ const models = core.models();
 const customErrorMiddleware = require('../../middleware/middleware.result');
 const { Op, Sequelize, where } = require('sequelize');
 const ExcelJS = require('exceljs');
+const mysql = require('mysql2');
 
 exports.getCustomer = async (req, res) => {
     try {
@@ -1521,10 +1522,24 @@ exports.getReportCustomer = async (req, res) => {
             {
                 where: {
                     id: req.user.id
-                }
+                },
+                attributes: ['id_bu', 'user_level', 'divisi']
             }
         )
         if (getUser) {
+            // Cek apakah user adalah sales atau rcadmin
+            const isSalesOrRcadmin = getUser && (
+                getUser.user_level == 2 || 
+                getUser.divisi === 'Sales' || 
+                getUser.divisi === 'sales' ||
+                getUser.divisi === 'rcadmin' ||
+                getUser.divisi === 'RCADMIN' ||
+                getUser.divisi === 'Rcadmin'
+            );
+
+            // Filter buId: hanya berlaku untuk divisi sales dan rcadmin
+            // Gunakan dari query parameter jika ada, jika tidak gunakan id_bu dari user yang login
+            const filterBuId = isSalesOrRcadmin ? (req.query.buId || (getUser && getUser.id_bu ? getUser.id_bu : null)) : null;
 
             // Format tanggal seperti PHP: Y-m-d 00:00:00 sampai Y-m-d 23:59:59
             const dateFirst = req.query.date_first || req.query.startDate;
@@ -1554,11 +1569,82 @@ exports.getReportCustomer = async (req, res) => {
                             id_customer: req.query.customer_id || req.query.customerId
                         } : {},
 
-                        ...req.query.keyword ? {
-                            msp: {
-                                [Op.like]: `%${req.query.keyword}%`
-                            },
-                        } : {},
+                        // Filter: menampilkan data berdasarkan id_bu user yang login
+                        // Hanya berlaku untuk divisi sales dan rcadmin
+                        // Filter menggunakan LIKE pada field msp:
+                        // - Jika id_bu = 11, maka HANYA msp LIKE '11-SO%' (tidak boleh 21-SO atau yang lain)
+                        // - Jika id_bu = 21, maka msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                        ...(isSalesOrRcadmin && filterBuId ? {
+                            [Op.or]: [
+                                // Filter berdasarkan format msp menggunakan LIKE
+                                // Jika id_bu = 11: HANYA msp LIKE '11-SO%'
+                                // Jika id_bu = 21: msp LIKE '21-SO%' OR msp LIKE 'SP%'
+                                ...(parseInt(filterBuId) == 21 ? [
+                                    { msp: { [Op.like]: `21-SO%` } },
+                                    { msp: { [Op.like]: `SP%` } }
+                                ] : [
+                                    { msp: { [Op.like]: `${filterBuId}-SO%` } }
+                                ]),
+                                // Untuk sales/rcadmin, juga cek id_bu di m_pengadaan dan id_bu dari user sales
+                                // Hanya untuk data yang tidak mengikuti pola XX-SO- atau SP-
+                                Sequelize.literal(`(
+                                    m_pengadaan.id_bu = ${mysql.escape(filterBuId)}
+                                    AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                                    AND m_pengadaan.msp NOT LIKE 'SP%'
+                                )`),
+                                Sequelize.literal(`(
+                                    EXISTS (
+                                        SELECT 1 FROM users 
+                                        WHERE users.id = m_pengadaan.id_sales 
+                                        AND users.id_bu = ${mysql.escape(filterBuId)}
+                                    )
+                                    AND m_pengadaan.msp NOT REGEXP '^[0-9]+-SO-'
+                                    AND m_pengadaan.msp NOT LIKE 'SP%'
+                                )`)
+                            ]
+                        } : {}),
+
+                        // Filter keyword: harus menghormati filter buId jika ada
+                        ...(req.query.keyword ? {
+                            [Op.or]: [
+                                // Filter keyword pada msp: harus menghormati filter buId jika ada
+                                // Jika buId=11: hanya cari keyword dalam msp yang match pattern "11-SO%"
+                                // Jika buId=21: hanya cari keyword dalam msp yang match pattern "21-SO%" atau "SP%"
+                                // Jika tidak ada buId filter: cari keyword di semua msp
+                                ...(isSalesOrRcadmin && filterBuId ? (
+                                    parseInt(filterBuId) == 21 ? [
+                                        // Untuk buId=21: keyword harus match dalam msp yang dimulai dengan "21-SO" atau "SP"
+                                        Sequelize.literal(`(
+                                            m_pengadaan.msp LIKE '21-SO%' 
+                                            AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                        )`),
+                                        Sequelize.literal(`(
+                                            m_pengadaan.msp LIKE 'SP%' 
+                                            AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                        )`)
+                                    ] : [
+                                        // Untuk buId selain 21 (misalnya 11): keyword harus match dalam msp yang dimulai dengan "{buId}-SO"
+                                        Sequelize.literal(`(
+                                            m_pengadaan.msp LIKE ${mysql.escape(filterBuId + '-SO%')} 
+                                            AND m_pengadaan.msp LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                        )`)
+                                    ]
+                                ) : [
+                                    // Jika tidak ada buId filter, cari keyword di semua msp
+                                    { msp: { [Op.like]: `%${req.query.keyword}%` } }
+                                ]),
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM customer 
+                                    WHERE customer.id_customer = m_pengadaan.id_customer 
+                                    AND customer.nama_perusahaan LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`), // Perusahaan
+                                Sequelize.literal(`EXISTS (
+                                    SELECT 1 FROM users 
+                                    WHERE users.id = m_pengadaan.id_sales 
+                                    AND users.nama_lengkap LIKE ${mysql.escape('%' + req.query.keyword + '%')}
+                                )`) // Marketing
+                            ]
+                        } : {}),
                     },
                     // } : {},
                     // group: 'msp',
