@@ -352,6 +352,8 @@ var _push_notification = require("./push_notification");
 var _pw_harian = require("./pw_harian");
 var _quot_ket = require("./quot_ket");
 var _quot_tarif = require("./quot_tarif");
+var _quotation = require("./quotation");
+var _quotation_detail = require("./quotation_detail");
 var _race_ptj = require("./race_ptj");
 var _reward = require("./reward");
 var _smstatus = require("./smstatus");
@@ -739,6 +741,8 @@ function initModels(sequelize) {
   var pw_harian = _pw_harian(sequelize, DataTypes);
   var quot_ket = _quot_ket(sequelize, DataTypes);
   var quot_tarif = _quot_tarif(sequelize, DataTypes);
+  var quotation = _quotation(sequelize, DataTypes);
+  var quotation_detail = _quotation_detail(sequelize, DataTypes);
   var race_ptj = _race_ptj(sequelize, DataTypes);
   var reward = _reward(sequelize, DataTypes);
   var smstatus = _smstatus(sequelize, DataTypes);
@@ -1153,6 +1157,8 @@ function initModels(sequelize) {
     pw_harian,
     quot_ket,
     quot_tarif,
+    quotation,
+    quotation_detail,
     race_ptj,
     reward,
     smstatus,

@@ -1625,12 +1625,6 @@ exports.getReportCustomer = async (req, res) => {
                         {
                             model: models.m_status_order,
                             required: true,
-                            where: {
-                                [Op.or]: [
-                                    { kendaraan_operasional: 'Y' },
-                                    { kendaraan_purchasing: 'Y' }
-                                ]
-                            },
                             include: [
                                 { 
                                     model: models.users,
@@ -1657,13 +1651,7 @@ exports.getReportCustomer = async (req, res) => {
                 let resultIndex = 0;
 
                 const result = getData.rows.map((item, index) => {
-                    // Filter hanya yang kendaraan_operasional == 'Y' OR kendaraan_purchasing == 'Y'
-                    // Note: Sebenarnya sudah difilter di query level, tapi tetap cek untuk safety
-                    if (item.m_status_order && 
-                        item.m_status_order.kendaraan_operasional !== 'Y' && 
-                        item.m_status_order.kendaraan_purchasing !== 'Y') {
-                        return null;
-                    }
+                    // Tidak perlu filter lagi, semua status ditampilkan termasuk waiting
 
                     // Format destination seperti PHP: komut->kota dan msm untuk setiap detail
                     let destinationStr = '';
@@ -1735,26 +1723,33 @@ exports.getReportCustomer = async (req, res) => {
                     sub_total += price_perhitungan;
                     sub_totaldb += pricereal;
 
-                    // Tentukan status seperti PHP
+                    // Tentukan status seperti PHP (dengan akunting)
                     let statusText = '';
                     if (item.status === '0') {
                         statusText = 'DO Cancel';
                     } else {
                         let alto = '';
                         let altp = '';
+                        let alta = '';
                         
                         if (item.m_status_order?.operasional === '0' || !item.m_status_order?.operasional) {
-                            alto = 'ops waiting';
+                            alto = 'Ops Waiting';
                         } else {
                             alto = item.m_status_order?.kendaraan_operasional === 'Y' ? 'Ops Ready' : 'Ops No Ready';
                         }
 
                         if (item.m_status_order?.purchasing === '0' || !item.m_status_order?.purchasing) {
-                            altp = 'purch waiting';
+                            altp = 'Purch Waiting';
                         } else {
                             altp = item.m_status_order?.kendaraan_purchasing === 'Y' ? 'Purch Ready' : 'Purch No Ready';
                         }
-                        statusText = `${alto} dan ${altp}`;
+
+                        if (item.m_status_order?.akunting === '0' || !item.m_status_order?.akunting) {
+                            alta = 'Akunting Waiting';
+                        } else {
+                            alta = item.m_status_order?.act_akunting === 'Y' ? 'Akunting Ready' : 'Akunting No Ready';
+                        }
+                        statusText = `${alto}, ${altp} dan ${alta}`;
                     }
 
                     const kendaraan = details.length > 0 ? details[0].kendaraan : '-';
@@ -1950,9 +1945,13 @@ exports.exportReportCustomerExcel = async (req, res) => {
         if (!models.m_pengadaan.associations.adminName) {
             models.m_pengadaan.belongsTo(models.users, { targetKey: 'id', foreignKey: 'id_admin', as: 'adminName' });
         }
+        if (!models.m_pengadaan.associations.salesDataReport) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataReport' });
+        }
         models.m_pengadaan.belongsTo(models.customer, { targetKey: 'id_customer', foreignKey: 'id_customer' });
         models.m_pengadaan.belongsTo(models.m_status_order, { targetKey: 'id_mp', foreignKey: 'id_mp' });
         models.m_pengadaan.hasMany(models.m_pengadaan_detail, { targetKey: 'id_mp', foreignKey: 'id_mp' });
+        models.m_status_order.belongsTo(models.users, { targetKey: 'id', foreignKey: 'operasional' });
 
         // Setup associations for m_pengadaan_detail
         if (!models.m_pengadaan_detail.associations.muat) {
@@ -1980,7 +1979,7 @@ exports.exportReportCustomerExcel = async (req, res) => {
             });
         }
 
-        // Format tanggal
+        // Format tanggal (sama dengan getReportCustomer)
         const dateFirst = req.query.date_first || req.query.startDate;
         const dateUntil = req.query.date_until || req.query.endDate;
         
@@ -1990,8 +1989,10 @@ exports.exportReportCustomerExcel = async (req, res) => {
             endDate = core.moment(dateUntil).format('YYYY-MM-DD 23:59:59');
         }
 
-        // Query data tanpa pagination
-        const getData = await models.m_pengadaan.findAll({
+        // Query data tanpa pagination, tapi dengan logika yang sama persis dengan getReportCustomer
+        // Gunakan findAndCountAll seperti getReportCustomer untuk konsistensi, tapi tanpa limit/offset
+        const getDataResult = await models.m_pengadaan.findAndCountAll({
+            distinct: true, // Pastikan distinct rows
             order: [['id_mp', 'desc']],
             where: {
                 ...dateFirst && dateUntil ? {
@@ -2037,6 +2038,12 @@ exports.exportReportCustomerExcel = async (req, res) => {
                     attributes: ['nama_lengkap']
                 },
                 {
+                    model: models.m_sales,
+                    as: 'salesDataReport',
+                    attributes: ['nama_sales'],
+                    required: false
+                },
+                {
                     model: models.customer,
                     required: false,
                     attributes: ['nama_perusahaan', 'id_customer']
@@ -2044,7 +2051,7 @@ exports.exportReportCustomerExcel = async (req, res) => {
                 {
                     model: models.m_pengadaan_detail,
                     required: false,
-                    attributes: ['kendaraan', 'kendaraan_mitra', 'id_mpd'],
+                    attributes: ['kendaraan', 'kendaraan_mitra', 'id_mpd', 'harga', 'jumlah', 'biaya_overtonase', 'harga_muat', 'harga_bongkar', 'biaya_multidrop', 'biaya_lain', 'biaya_mel', 'biaya_tambahan', 'biaya_multimuat', 'diskon', 'pajak'],
                     include: [
                         {
                             model: models.alamat,
@@ -2068,15 +2075,18 @@ exports.exportReportCustomerExcel = async (req, res) => {
                 {
                     model: models.m_status_order,
                     required: true,
-                    where: {
-                        [Op.or]: [
-                            { kendaraan_operasional: 'Y' },
-                            { kendaraan_purchasing: 'Y' }
-                        ]
-                    }
+                    include: [
+                        { 
+                            model: models.users,
+                            attributes: ['nama_lengkap']
+                        }
+                    ]
                 },
             ]
         });
+
+        // Ambil rows dari hasil query (sama seperti getReportCustomer)
+        const getData = getDataResult.rows;
 
         // Prepare Excel data dengan tracking untuk merge cells
         const excelRows = [];
@@ -2085,12 +2095,7 @@ exports.exportReportCustomerExcel = async (req, res) => {
         let currentExcelRow = 2; // Baris Excel dimulai dari 2 (setelah header)
 
         for (const item of getData) {
-            // Filter hanya yang kendaraan_operasional == 'Y' OR kendaraan_purchasing == 'Y'
-            if (item.m_status_order && 
-                item.m_status_order.kendaraan_operasional !== 'Y' && 
-                item.m_status_order.kendaraan_purchasing !== 'Y') {
-                continue;
-            }
+            // Tidak perlu filter lagi, semua status ditampilkan termasuk waiting
 
             const details = item.m_pengadaan_details || [];
             
@@ -2132,36 +2137,15 @@ exports.exportReportCustomerExcel = async (req, res) => {
             }
 
             const pricereal = item.total_keseluruhan || 0;
+            
+            // Hitung selisih antara Price dan Realprice
+            const selisih = price_perhitungan - pricereal;
 
             // Ambil detail pertama untuk baris utama
             const firstDetail = details.length > 0 ? details[0] : null;
             const firstMsm = firstDetail && firstDetail.m_sms && firstDetail.m_sms.length > 0 
                 ? firstDetail.m_sms[0].msm 
                 : '';
-
-            // Format alamat muat (lengkap dengan semua bagian)
-            let alamatMuat = '';
-            if (firstDetail && firstDetail.muat) {
-                const muat = firstDetail.muat;
-                const parts = [];
-                if (muat.alamat) parts.push(muat.alamat);
-                if (muat.alamat_detail) parts.push(muat.alamat_detail);
-                if (muat.kecamatan) parts.push(muat.kecamatan);
-                if (muat.kota) parts.push(muat.kota);
-                alamatMuat = parts.join(', ').trim();
-            }
-
-            // Format alamat bongkar (lengkap dengan semua bagian)
-            let alamatBongkar = '';
-            if (firstDetail && firstDetail.bongkar) {
-                const bongkar = firstDetail.bongkar;
-                const parts = [];
-                if (bongkar.alamat) parts.push(bongkar.alamat);
-                if (bongkar.alamat_detail) parts.push(bongkar.alamat_detail);
-                if (bongkar.kecamatan) parts.push(bongkar.kecamatan);
-                if (bongkar.kota) parts.push(bongkar.kota);
-                alamatBongkar = parts.join(', ').trim();
-            }
 
             // Format tujuan
             let tujuan = '';
@@ -2173,26 +2157,41 @@ exports.exportReportCustomerExcel = async (req, res) => {
                 }
             }
 
-            // Tentukan status seperti di getReportCustomer
-            let statusText = '';
+            // Tentukan status terpisah untuk operasional, purchasing, dan akunting
+            let alto = '';
+            let altp = '';
+            let alta = '';
+            
             if (item.status === '0') {
-                statusText = 'DO Cancel';
+                alto = 'DO Cancel';
+                altp = 'DO Cancel';
+                alta = 'DO Cancel';
             } else {
-                let alto = '';
-                let altp = '';
-                
                 if (item.m_status_order?.operasional === '0' || !item.m_status_order?.operasional) {
-                    alto = 'ops waiting';
+                    alto = 'Ops Waiting';
                 } else {
                     alto = item.m_status_order?.kendaraan_operasional === 'Y' ? 'Ops Ready' : 'Ops No Ready';
                 }
 
                 if (item.m_status_order?.purchasing === '0' || !item.m_status_order?.purchasing) {
-                    altp = 'purch waiting';
+                    altp = 'Purch Waiting';
                 } else {
                     altp = item.m_status_order?.kendaraan_purchasing === 'Y' ? 'Purch Ready' : 'Purch No Ready';
                 }
-                statusText = `${alto} dan ${altp}`;
+
+                if (item.m_status_order?.akunting === '0' || !item.m_status_order?.akunting) {
+                    alta = 'Akunting Waiting';
+                } else {
+                    alta = item.m_status_order?.act_akunting === 'Y' ? 'Akunting Ready' : 'Akunting No Ready';
+                }
+            }
+
+            // Determine salesName: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap (sama dengan getReportCustomer)
+            let salesName = "-";
+            if (item.code_sales != null && item.code_sales !== "" && item.salesDataReport != null) {
+                salesName = item.salesDataReport.nama_sales || "-";
+            } else if (item.salesName != null) {
+                salesName = item.salesName.nama_lengkap || "-";
             }
 
             // Baris pertama dengan data lengkap (SP + SM pertama dari detail pertama)
@@ -2201,16 +2200,17 @@ exports.exportReportCustomerExcel = async (req, res) => {
                 noSP: item.msp || '',
                 noSM: firstMsm,
                 perusahaan: item.customer?.nama_perusahaan || '',
-                sales: item.salesName?.nama_lengkap || '',
+                sales: salesName,
                 tujuan: tujuan,
-                alamatMuat: alamatMuat,
-                alamatDestinasi: alamatBongkar,
                 tglPickup: item.tgl_pickup ? core.moment(item.tgl_pickup).format('DD-MM-YYYY') : '',
                 orderDate: item.tgl_order ? core.moment(item.tgl_order).format('DD-MM-YYYY') : '',
                 kendaraan: firstDetail?.kendaraan || '',
                 price: price_perhitungan,
                 realprice: pricereal,
-                status: statusText
+                selisih: selisih,
+                akunting: alta,
+                operasional: alto,
+                purchasing: altp
             });
             currentExcelRow++;
 
@@ -2227,29 +2227,6 @@ exports.exportReportCustomerExcel = async (req, res) => {
                 for (let j = startIndex; j < sms.length; j++) {
                     const sm = sms[j];
                     
-                    // Format alamat untuk SM ini (lengkap dengan semua bagian)
-                    let smAlamatMuat = '';
-                    if (detail.muat) {
-                        const muat = detail.muat;
-                        const parts = [];
-                        if (muat.alamat) parts.push(muat.alamat);
-                        if (muat.alamat_detail) parts.push(muat.alamat_detail);
-                        if (muat.kecamatan) parts.push(muat.kecamatan);
-                        if (muat.kota) parts.push(muat.kota);
-                        smAlamatMuat = parts.join(', ').trim();
-                    }
-
-                    let smAlamatBongkar = '';
-                    if (detail.bongkar) {
-                        const bongkar = detail.bongkar;
-                        const parts = [];
-                        if (bongkar.alamat) parts.push(bongkar.alamat);
-                        if (bongkar.alamat_detail) parts.push(bongkar.alamat_detail);
-                        if (bongkar.kecamatan) parts.push(bongkar.kecamatan);
-                        if (bongkar.kota) parts.push(bongkar.kota);
-                        smAlamatBongkar = parts.join(', ').trim();
-                    }
-
                     // Format tujuan untuk SM ini
                     let smTujuan = '';
                     if (detail.muat && detail.bongkar) {
@@ -2267,33 +2244,37 @@ exports.exportReportCustomerExcel = async (req, res) => {
                         perusahaan: '',
                         sales: '',
                         tujuan: smTujuan,
-                        alamatMuat: smAlamatMuat,
-                        alamatDestinasi: smAlamatBongkar,
                         tglPickup: '',
                         orderDate: '',
                         kendaraan: '',
                         price: '',
                         realprice: '',
-                        status: ''
+                        selisih: '',
+                        akunting: '',
+                        operasional: '',
+                        purchasing: ''
                     });
                     currentExcelRow++;
                 }
             }
             
             // Simpan range untuk merge (hanya jika ada lebih dari 1 baris)
+            // Kolom: No (A), No SP (B), No SM (C), Perusahaan (D), Sales (E), Tujuan (F), Tgl Pickup (G), Order Date (H), Kendaraan (I), Price (J), Realprice (K), Selisih (L), Akunting (M), Operasional (N), Purchasing (O)
             if (endRow > startRow) {
-                // Merge kolom: No (A), No SP (B), Perusahaan (D), Sales (E), Tgl Pickup (I), Order Date (J), Kendaraan (K), Price (L), Realprice (M), Status (N)
                 mergeRanges.push(
                     { start: startRow, end: endRow, col: 'A' }, // No
                     { start: startRow, end: endRow, col: 'B' }, // No SP
                     { start: startRow, end: endRow, col: 'D' }, // Perusahaan
                     { start: startRow, end: endRow, col: 'E' }, // Sales
-                    { start: startRow, end: endRow, col: 'I' }, // Tgl Pickup
-                    { start: startRow, end: endRow, col: 'J' }, // Order Date
-                    { start: startRow, end: endRow, col: 'K' }, // Kendaraan
-                    { start: startRow, end: endRow, col: 'L' }, // Price
-                    { start: startRow, end: endRow, col: 'M' }, // Realprice
-                    { start: startRow, end: endRow, col: 'N' }  // Status
+                    { start: startRow, end: endRow, col: 'G' }, // Tgl Pickup
+                    { start: startRow, end: endRow, col: 'H' }, // Order Date
+                    { start: startRow, end: endRow, col: 'I' }, // Kendaraan
+                    { start: startRow, end: endRow, col: 'J' }, // Price
+                    { start: startRow, end: endRow, col: 'K' }, // Realprice
+                    { start: startRow, end: endRow, col: 'L' }, // Selisih
+                    { start: startRow, end: endRow, col: 'M' }, // Akunting
+                    { start: startRow, end: endRow, col: 'N' }, // Operasional
+                    { start: startRow, end: endRow, col: 'O' }  // Purchasing
                 );
             }
         }
@@ -2310,14 +2291,15 @@ exports.exportReportCustomerExcel = async (req, res) => {
             { header: 'Perusahaan', key: 'perusahaan', width: 40 },
             { header: 'Sales', key: 'sales', width: 20 },
             { header: 'Tujuan', key: 'tujuan', width: 25 },
-            { header: 'Alamat Muat', key: 'alamatMuat', width: 50 },
-            { header: 'Alamat Destinasi', key: 'alamatDestinasi', width: 50 },
             { header: 'Tgl Pickup', key: 'tglPickup', width: 15 },
             { header: 'Order Date', key: 'orderDate', width: 15 },
             { header: 'Kendaraan', key: 'kendaraan', width: 20 },
             { header: 'Price', key: 'price', width: 15 },
             { header: 'Realprice', key: 'realprice', width: 15 },
-            { header: 'Status', key: 'status', width: 15 }
+            { header: 'Selisih', key: 'selisih', width: 15 },
+            { header: 'Akunting', key: 'akunting', width: 18 },
+            { header: 'Operasional', key: 'operasional', width: 18 },
+            { header: 'Purchasing', key: 'purchasing', width: 18 }
         ];
 
         // Style header row
@@ -2332,12 +2314,15 @@ exports.exportReportCustomerExcel = async (req, res) => {
             excelRow.getCell(2).alignment = { vertical: 'middle', horizontal: 'center' }; // No SP
             excelRow.getCell(4).alignment = { vertical: 'middle', horizontal: 'left' }; // Perusahaan
             excelRow.getCell(5).alignment = { vertical: 'middle', horizontal: 'left' }; // Sales
-            excelRow.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' }; // Tgl Pickup
-            excelRow.getCell(10).alignment = { vertical: 'middle', horizontal: 'center' }; // Order Date
-            excelRow.getCell(11).alignment = { vertical: 'middle', horizontal: 'center' }; // Kendaraan
-            excelRow.getCell(12).alignment = { vertical: 'middle', horizontal: 'right' }; // Price
-            excelRow.getCell(13).alignment = { vertical: 'middle', horizontal: 'right' }; // Realprice
-            excelRow.getCell(14).alignment = { vertical: 'middle', horizontal: 'center' }; // Status
+            excelRow.getCell(7).alignment = { vertical: 'middle', horizontal: 'center' }; // Tgl Pickup
+            excelRow.getCell(8).alignment = { vertical: 'middle', horizontal: 'center' }; // Order Date
+            excelRow.getCell(9).alignment = { vertical: 'middle', horizontal: 'center' }; // Kendaraan
+            excelRow.getCell(10).alignment = { vertical: 'middle', horizontal: 'right' }; // Price
+            excelRow.getCell(11).alignment = { vertical: 'middle', horizontal: 'right' }; // Realprice
+            excelRow.getCell(12).alignment = { vertical: 'middle', horizontal: 'right' }; // Selisih
+            excelRow.getCell(13).alignment = { vertical: 'middle', horizontal: 'center' }; // Akunting
+            excelRow.getCell(14).alignment = { vertical: 'middle', horizontal: 'center' }; // Operasional
+            excelRow.getCell(15).alignment = { vertical: 'middle', horizontal: 'center' }; // Purchasing
         });
 
         // Merge cells untuk baris yang sama SP
@@ -2349,10 +2334,11 @@ exports.exportReportCustomerExcel = async (req, res) => {
             if (range.col === 'D' || range.col === 'E') {
                 // Perusahaan dan Sales: left align
                 horizontalAlign = 'left';
-            } else if (range.col === 'L' || range.col === 'M') {
-                // Price dan Realprice: right align
+            } else if (range.col === 'J' || range.col === 'K' || range.col === 'L') {
+                // Price, Realprice, dan Selisih: right align
                 horizontalAlign = 'right';
             }
+            // Akunting (M), Operasional (N), Purchasing (O): center align (default)
             cell.alignment = { vertical: 'middle', horizontal: horizontalAlign };
         });
 

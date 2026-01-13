@@ -67,6 +67,8 @@ router.use('/cab', require('./m_cab/m_cab.routes'));
 router.use('/sales', require('./m_sales/m_sales.routes'));
 router.use('/produk', require('./m_produk/m_produk.routes'));
 router.use('/odoo', require('./odoo/odoo.routes'));
+router.use('/quotation', require('./quotation/quotation.routes'));
+router.use('/quotation-detail', require('./quotation/quotation_detail.routes'));
 
 
 module.exports = router;
