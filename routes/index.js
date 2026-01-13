@@ -3,14 +3,11 @@ var router = express.Router();
 
 const cors = require('cors');
 
-// router.use(cors())
-
 router.use(cors({
   origin: '*',
   methods: ["GET", "POST", "PATCH", "DELETE", "PUT"],
   allowedHeaders: 'Content-Type, Authorization, Origin, X-Requested-With, Accept'
 }))
-// router.use(cors());
 router.options('*', cors());
 var allowCrossDomain = function (req, res, next) {
   res.header('Access-Control-Allow-Origin', '*');
@@ -46,7 +43,6 @@ router.use('/user', require('./user/user.routes'))
 router.use('/return', require('./Return/return.routes'))
 router.use('/uang_jalan', require('./uang_jalan/uang_jalan.routes'))
 router.use('/uang_jalan_ptj', require('./uang_jalan/uang_jalan_ptj.routes'))
-// router.use('/banner', require('./banner/banner.routes'))
 router.use('/banner', require('./banner/banner.routes'))
 router.use('/fcm-token', require('./fcm_token/fcm_token.routes'))
 router.use('/fcm-cc', require('./fcm_cc/fcm_cc.routes'))
@@ -69,6 +65,8 @@ router.use('/produk', require('./m_produk/m_produk.routes'));
 router.use('/odoo', require('./odoo/odoo.routes'));
 router.use('/quotation', require('./quotation/quotation.routes'));
 router.use('/quotation-detail', require('./quotation/quotation_detail.routes'));
+router.use('/po', require('./m_po/m_po.routes'));
+router.use('/po-detail', require('./m_po/m_po_detail.routes'));
 
 
 module.exports = router;

@@ -57,7 +57,7 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER(50),
       allowNull: false
     },
-    id_tarif_race: {
+    id_tarif_eureka: {
       type: DataTypes.STRING(20),
       allowNull: false
     },

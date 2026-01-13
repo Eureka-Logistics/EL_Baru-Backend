@@ -11524,7 +11524,14 @@ exports.anotherDriver = async (req, res) => {
         // Relasi mitra (boleh tetap di sini untuk mitra)
         models.m_driver.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra' });
 
-        // Tidak perlu definisi relasi kendaraan di sini jika sudah diinisialisasi di index.js!
+        // Define association m_driver -> kendaraan (hasMany)
+        if (!models.m_driver.associations.kendaraans) {
+            models.m_driver.hasMany(models.kendaraan, { 
+                foreignKey: 'id_driver', 
+                sourceKey: 'id', 
+                as: 'kendaraans' 
+            });
+        }
 
         const getUser = await models.users.findOne({
             where: { id: req.user.id }
@@ -14172,6 +14179,9 @@ exports.getSpListAllDetail = async (req, res) => {
         if (!models.users.associations.brench) {
             models.users.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench', as: 'brench' });
         }
+        if (!models.m_pengadaan.associations.salesDataVico) {
+            models.m_pengadaan.belongsTo(models.m_sales, { targetKey: 'nik_sales', foreignKey: 'code_sales', as: 'salesDataVico' });
+        }
         if (!models.alamat.associations.m_wil_provinsi) {
             models.alamat.belongsTo(models.m_wil_provinsi, { targetKey: 'id_provinsi', foreignKey: 'id_provinsi' });
         }
@@ -14342,7 +14352,12 @@ exports.getSpListAllDetail = async (req, res) => {
                                 }
                             ]
                         },
-
+                        {
+                            model: models.m_sales,
+                            as: 'salesDataVico',
+                            attributes: ['nama_sales'],
+                            required: false
+                        },
                         // {
                         //     model: models.m_bu_employee,
                         //     as: 'gl',
@@ -14436,7 +14451,16 @@ exports.getSpListAllDetail = async (req, res) => {
 
                 const alamaInvoice = (getPengadaan.map((i) => i.alamat_invoice) != '' ? getPengadaan.map((i) => i.alamat_invoice) : getDetail.map((i) => i.m_pengadaan.alamat_invoice));
 
-                const marketing = getPengadaan.map((i) => i.user.nama_lengkap == null ? "-" : i.user.nama_lengkap)
+                // Determine marketing: if code_sales is not null, use m_sales.nama_sales, otherwise use users.nama_lengkap
+                const marketing = getPengadaan.map((i) => {
+                    if (i.code_sales != null && i.code_sales !== "" && i.salesDataVico != null) {
+                        return i.salesDataVico.nama_sales || "-";
+                    } else if (i.user != null) {
+                        return i.user.nama_lengkap || "-";
+                    }
+                    return "-";
+                })
+                const branch = getPengadaan.map((i) => i.user?.brench?.wilayah || "-")
                 const getService = getPengadaan.map((i) => i.service)
                 const telpCustomer = (getCustomer.map((i) => i.telepon) != '' ? getCustomer.map((i) => i.telepon) : getDetail.map((i) => i.m_pengadaan.customer.telepon));
                 const customer = (getCustomer.map((i) => i.nama_perusahaan) != '' ? getCustomer.map((i) => i.nama_perusahaan) : getDetail.map((i) => i.m_pengadaan.customer.nama_perusahaan));
@@ -14508,6 +14532,7 @@ exports.getSpListAllDetail = async (req, res) => {
                     spk: noSpk[0],
                     sp: noSp[0],
                     marketing: marketing[0],
+                    branch: branch[0],
                     service: service[0],
                     order_date: orderDate[0],
                     pickup_date: pickupDate[0],

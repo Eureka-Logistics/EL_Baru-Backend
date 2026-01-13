@@ -27,19 +27,24 @@ exports.createQuotationDetail = async (req, res) => {
                 min_tonase,
                 price,
                 leadtime,
-                id_tarif_race,
+                id_tarif_eureka,
                 is_custom,
                 note
             } = req.body;
 
-            // Validasi field wajib
-            if (!id_quotation || !id_kota_muat || !id_kec_muat || !id_kota_tujuan || !id_kec_tujuan || 
-                !id_kendaraan_jenis || !min_tonase || !price || !leadtime || !id_tarif_race || 
+            // Fallback null ke 0 untuk field tertentu
+            const finalIdKotaMuat = id_kota_muat === null || id_kota_muat === undefined ? 0 : id_kota_muat;
+            const finalIdKecMuat = id_kec_muat === null || id_kec_muat === undefined ? 0 : id_kec_muat;
+            const finalIdKecTujuan = id_kec_tujuan === null || id_kec_tujuan === undefined ? 0 : id_kec_tujuan;
+
+            // Validasi field wajib (0 dianggap valid)
+            if (!id_quotation || finalIdKotaMuat === undefined || finalIdKecMuat === undefined || !id_kota_tujuan || finalIdKecTujuan === undefined || 
+                !id_kendaraan_jenis || !min_tonase || !price || !leadtime || !id_tarif_eureka || 
                 is_custom === undefined || !note) {
                 output = {
                     status: {
                         code: 400,
-                        message: 'Field id_quotation, id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_race, is_custom, dan note wajib diisi'
+                        message: 'Field id_quotation, id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_eureka, is_custom, dan note wajib diisi'
                     }
                 };
             } else {
@@ -61,18 +66,18 @@ exports.createQuotationDetail = async (req, res) => {
                 } else {
                     const createData = await models.quotation_detail.create({
                         id_quotation: id_quotation,
-                        id_kota_muat: id_kota_muat,
-                        id_kec_muat: id_kec_muat,
+                        id_kota_muat: finalIdKotaMuat,
+                        id_kec_muat: finalIdKecMuat,
                         alamat_muat: alamat_muat || null,
                         id_kota_tujuan: id_kota_tujuan,
-                        id_kec_tujuan: id_kec_tujuan,
+                        id_kec_tujuan: finalIdKecTujuan,
                         alamat_tujuan: alamat_tujuan || null,
                         id_kendaraan_jenis: id_kendaraan_jenis,
                         service: service || 'charter',
                         min_tonase: min_tonase,
                         price: price,
                         leadtime: leadtime,
-                        id_tarif_race: id_tarif_race,
+                        id_tarif_eureka: id_tarif_eureka,
                         is_custom: is_custom,
                         note: note
                     });
@@ -132,7 +137,7 @@ exports.editQuotationDetail = async (req, res) => {
                 min_tonase,
                 price,
                 leadtime,
-                id_tarif_race,
+                id_tarif_eureka,
                 is_custom,
                 note
             } = req.body;
@@ -161,18 +166,18 @@ exports.editQuotationDetail = async (req, res) => {
                 } else {
                     const updateData = {};
                     if (id_quotation !== undefined) updateData.id_quotation = id_quotation;
-                    if (id_kota_muat !== undefined) updateData.id_kota_muat = id_kota_muat;
-                    if (id_kec_muat !== undefined) updateData.id_kec_muat = id_kec_muat;
+                    if (id_kota_muat !== undefined) updateData.id_kota_muat = id_kota_muat === null ? 0 : id_kota_muat;
+                    if (id_kec_muat !== undefined) updateData.id_kec_muat = id_kec_muat === null ? 0 : id_kec_muat;
                     if (alamat_muat !== undefined) updateData.alamat_muat = alamat_muat;
                     if (id_kota_tujuan !== undefined) updateData.id_kota_tujuan = id_kota_tujuan;
-                    if (id_kec_tujuan !== undefined) updateData.id_kec_tujuan = id_kec_tujuan;
+                    if (id_kec_tujuan !== undefined) updateData.id_kec_tujuan = id_kec_tujuan === null ? 0 : id_kec_tujuan;
                     if (alamat_tujuan !== undefined) updateData.alamat_tujuan = alamat_tujuan;
                     if (id_kendaraan_jenis !== undefined) updateData.id_kendaraan_jenis = id_kendaraan_jenis;
                     if (service !== undefined) updateData.service = service;
                     if (min_tonase !== undefined) updateData.min_tonase = min_tonase;
                     if (price !== undefined) updateData.price = price;
                     if (leadtime !== undefined) updateData.leadtime = leadtime;
-                    if (id_tarif_race !== undefined) updateData.id_tarif_race = id_tarif_race;
+                    if (id_tarif_eureka !== undefined) updateData.id_tarif_eureka = id_tarif_eureka;
                     if (is_custom !== undefined) updateData.is_custom = is_custom;
                     if (note !== undefined) updateData.note = note;
 
@@ -330,7 +335,7 @@ exports.getQuotationDetailList = async (req, res) => {
                         min_tonase: item.min_tonase,
                         price: item.price,
                         leadtime: item.leadtime,
-                        id_tarif_race: item.id_tarif_race,
+                        id_tarif_eureka: item.id_tarif_eureka,
                         is_custom: item.is_custom,
                         note: item.note
                     };
@@ -423,7 +428,7 @@ exports.getQuotationDetailById = async (req, res) => {
                             min_tonase: getData.min_tonase,
                             price: getData.price,
                             leadtime: getData.leadtime,
-                            id_tarif_race: getData.id_tarif_race,
+                            id_tarif_eureka: getData.id_tarif_eureka,
                             is_custom: getData.is_custom,
                             note: getData.note
                         }

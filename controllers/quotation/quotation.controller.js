@@ -3,6 +3,86 @@ const models = core.models();
 const customErrorMiddleware = require('../../middleware/middleware.result');
 const { Op } = require('sequelize');
 
+// Helper function to generate quotation_code automatically
+// Format: {id_bu}-QT-{YY}-{000001}
+// Contoh: id_bu = 11 => 11-QT-26-000001
+// - YY = 2 digit tahun berjalan
+// - 000001 = running number 6 digit per BU yang reset setiap tahun berganti
+async function generateQuotationCode(id_bu) {
+    try {
+        if (!id_bu) {
+            throw new Error('id_bu tidak ditemukan');
+        }
+
+        const now = new Date();
+        const currentYear = now.getFullYear().toString().slice(-2); // 2 digit tahun berjalan, contoh: 2026 -> "26"
+
+        // Cari quotation_code terakhir untuk BU ini
+        let latestQuotation = null;
+        try {
+            const result = await models.quotation.findOne({
+                where: {
+                    quotation_code: {
+                        [Op.like]: `${id_bu}-QT-%`
+                    },
+                    is_deleted: 0
+                },
+                order: [['id_quotation', 'DESC']]
+            });
+
+            if (result && result.quotation_code) {
+                latestQuotation = result.quotation_code;
+            }
+        } catch (queryError) {
+            console.error('Error querying latest quotation:', queryError);
+        }
+
+        let nextSequence = 1;
+
+        if (latestQuotation) {
+            // Bentuk nomor yang diharapkan: {id_bu}-QT-{YY}-{000001}
+            // Contoh: "11-QT-26-000001"
+            // Index string:
+            //  0-1 : id_bu (misal 11)
+            //  2   : '-'
+            //  3-4 : 'QT'
+            //  5   : '-'
+            //  6-7 : YY (tahun, misal "26")
+            //  8   : '-'
+            //  9-14: sequence "000001"
+
+            const lastYear = latestQuotation.substring(6, 8);
+
+            if (lastYear === currentYear) {
+                const sequencePart = latestQuotation.substring(9, 15);
+                const currentSequence = parseInt(sequencePart, 10);
+
+                if (!isNaN(currentSequence) && currentSequence >= 0) {
+                    nextSequence = currentSequence + 1;
+                }
+            } else {
+                // Tahun berbeda, reset ke 1
+                nextSequence = 1;
+            }
+        }
+
+        // Batas maksimum 6 digit: 999999
+        if (nextSequence > 999999) {
+            throw new Error('Nomor urut quotation sudah mencapai batas maksimum (999999) untuk format 6 digit');
+        }
+
+        // Format sequence menjadi 6 digit dengan leading zero
+        const formattedSequence = nextSequence.toString().padStart(6, '0');
+        const finalQuotationCode = `${id_bu}-QT-${currentYear}-${formattedSequence}`;
+
+        return finalQuotationCode;
+
+    } catch (error) {
+        console.error('Error generating quotation_code:', error);
+        throw error;
+    }
+}
+
 // Create Quotation
 exports.createQuotation = async (req, res) => {
     let output = {};
@@ -51,9 +131,15 @@ exports.createQuotation = async (req, res) => {
                 // Start transaction
                 transaction = await sequelize.transaction();
 
+                // Generate quotation_code jika tidak dikirim
+                let finalQuotationCode = quotation_code;
+                if (!finalQuotationCode) {
+                    finalQuotationCode = await generateQuotationCode(id_bu);
+                }
+
                 // Create quotation
                 const createData = await models.quotation.create({
-                    quotation_code: quotation_code || null,
+                    quotation_code: finalQuotationCode,
                     pic_name: pic_name || null,
                     id_customer: id_customer,
                     note: note || null,
@@ -93,20 +179,25 @@ exports.createQuotation = async (req, res) => {
                             min_tonase,
                             price,
                             leadtime,
-                            id_tarif_race,
+                            id_tarif_eureka,
                             is_custom,
                             note: detail_note
                         } = detail;
 
-                        // Validasi field wajib untuk quotation detail
-                        if (!id_kota_muat || !id_kec_muat || !id_kota_tujuan || !id_kec_tujuan || 
+                        // Fallback null ke 0 untuk field tertentu
+                        const finalIdKotaMuat = id_kota_muat === null || id_kota_muat === undefined ? 0 : id_kota_muat;
+                        const finalIdKecMuat = id_kec_muat === null || id_kec_muat === undefined ? 0 : id_kec_muat;
+                        const finalIdKecTujuan = id_kec_tujuan === null || id_kec_tujuan === undefined ? 0 : id_kec_tujuan;
+
+                        // Validasi field wajib untuk quotation detail (0 dianggap valid)
+                        if (finalIdKotaMuat === undefined || finalIdKecMuat === undefined || !id_kota_tujuan || finalIdKecTujuan === undefined || 
                             id_kendaraan_jenis === undefined || !min_tonase || !price || !leadtime || 
-                            !id_tarif_race || is_custom === undefined || !detail_note) {
+                            !id_tarif_eureka || is_custom === undefined || !detail_note) {
                             await transaction.rollback();
                             output = {
                                 status: {
                                     code: 400,
-                                    message: 'Field id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_race, is_custom, dan note wajib diisi untuk setiap quotation detail'
+                                    message: 'Field id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_eureka, is_custom, dan note wajib diisi untuk setiap quotation detail'
                                 }
                             };
                             const errorsFromMiddleware = await customErrorMiddleware(req);
@@ -119,18 +210,18 @@ exports.createQuotation = async (req, res) => {
 
                         const detailData = await models.quotation_detail.create({
                             id_quotation: id_quotation,
-                            id_kota_muat: id_kota_muat,
-                            id_kec_muat: id_kec_muat,
+                            id_kota_muat: finalIdKotaMuat,
+                            id_kec_muat: finalIdKecMuat,
                             alamat_muat: alamat_muat || null,
                             id_kota_tujuan: id_kota_tujuan,
-                            id_kec_tujuan: id_kec_tujuan,
+                            id_kec_tujuan: finalIdKecTujuan,
                             alamat_tujuan: alamat_tujuan || null,
                             id_kendaraan_jenis: id_kendaraan_jenis,
                             service: service || 'charter',
                             min_tonase: min_tonase,
                             price: price,
                             leadtime: leadtime,
-                            id_tarif_race: id_tarif_race,
+                            id_tarif_eureka: id_tarif_eureka,
                             is_custom: is_custom,
                             note: detail_note
                         }, { transaction });
@@ -311,20 +402,25 @@ exports.editQuotation = async (req, res) => {
                                 min_tonase,
                                 price,
                                 leadtime,
-                                id_tarif_race,
+                                id_tarif_eureka,
                                 is_custom,
                                 note: detail_note
                             } = detail;
 
-                            // Validasi field wajib untuk quotation detail
-                            if (!id_kota_muat || !id_kec_muat || !id_kota_tujuan || !id_kec_tujuan || 
+                            // Fallback null ke 0 untuk field tertentu
+                            const finalIdKotaMuat = id_kota_muat === null || id_kota_muat === undefined ? 0 : id_kota_muat;
+                            const finalIdKecMuat = id_kec_muat === null || id_kec_muat === undefined ? 0 : id_kec_muat;
+                            const finalIdKecTujuan = id_kec_tujuan === null || id_kec_tujuan === undefined ? 0 : id_kec_tujuan;
+
+                            // Validasi field wajib untuk quotation detail (0 dianggap valid)
+                            if (finalIdKotaMuat === undefined || finalIdKecMuat === undefined || !id_kota_tujuan || finalIdKecTujuan === undefined || 
                                 id_kendaraan_jenis === undefined || !min_tonase || !price || !leadtime || 
-                                !id_tarif_race || is_custom === undefined || !detail_note) {
+                                !id_tarif_eureka || is_custom === undefined || !detail_note) {
                                 await transaction.rollback();
                                 output = {
                                     status: {
                                         code: 400,
-                                        message: 'Field id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_race, is_custom, dan note wajib diisi untuk setiap quotation detail'
+                                        message: 'Field id_kota_muat, id_kec_muat, id_kota_tujuan, id_kec_tujuan, id_kendaraan_jenis, min_tonase, price, leadtime, id_tarif_eureka, is_custom, dan note wajib diisi untuk setiap quotation detail'
                                     }
                                 };
                                 const errorsFromMiddleware = await customErrorMiddleware(req);
@@ -338,18 +434,18 @@ exports.editQuotation = async (req, res) => {
                             if (id_quotation_detail) {
                                 // Update existing detail
                                 const detailUpdateData = {
-                                    id_kota_muat: id_kota_muat,
-                                    id_kec_muat: id_kec_muat,
+                                    id_kota_muat: finalIdKotaMuat,
+                                    id_kec_muat: finalIdKecMuat,
                                     alamat_muat: alamat_muat || null,
                                     id_kota_tujuan: id_kota_tujuan,
-                                    id_kec_tujuan: id_kec_tujuan,
+                                    id_kec_tujuan: finalIdKecTujuan,
                                     alamat_tujuan: alamat_tujuan || null,
                                     id_kendaraan_jenis: id_kendaraan_jenis,
                                     service: service || 'charter',
                                     min_tonase: min_tonase,
                                     price: price,
                                     leadtime: leadtime,
-                                    id_tarif_race: id_tarif_race,
+                                    id_tarif_eureka: id_tarif_eureka,
                                     is_custom: is_custom,
                                     note: detail_note
                                 };
@@ -373,18 +469,18 @@ exports.editQuotation = async (req, res) => {
                                 // Create new detail
                                 const newDetail = await models.quotation_detail.create({
                                     id_quotation: id_quotation,
-                                    id_kota_muat: id_kota_muat,
-                                    id_kec_muat: id_kec_muat,
+                                    id_kota_muat: finalIdKotaMuat,
+                                    id_kec_muat: finalIdKecMuat,
                                     alamat_muat: alamat_muat || null,
                                     id_kota_tujuan: id_kota_tujuan,
-                                    id_kec_tujuan: id_kec_tujuan,
+                                    id_kec_tujuan: finalIdKecTujuan,
                                     alamat_tujuan: alamat_tujuan || null,
                                     id_kendaraan_jenis: id_kendaraan_jenis,
                                     service: service || 'charter',
                                     min_tonase: min_tonase,
                                     price: price,
                                     leadtime: leadtime,
-                                    id_tarif_race: id_tarif_race,
+                                    id_tarif_eureka: id_tarif_eureka,
                                     is_custom: is_custom,
                                     note: detail_note
                                 }, { transaction });
