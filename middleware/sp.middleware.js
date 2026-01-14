@@ -53,6 +53,16 @@ exports.validate = (method) => {
                     .withMessage(`asuransi harus diisi`),
             ]
         }
+        case 'createSp_race': {
+            return [
+                check('id_sales')
+                    .not().isEmpty()
+                    .withMessage(`sales harus diisi`),
+                check('tgl_order')
+                    .not().isEmpty()
+                    .withMessage(`tanggal order harus diisi`),
+            ]
+        }
 
 
 

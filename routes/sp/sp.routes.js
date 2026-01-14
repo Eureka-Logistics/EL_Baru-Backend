@@ -9,17 +9,24 @@ router.get('/get-SP-select-create', authentication, spController.getSelectCreate
 router.get('/get-SP-select-detail', authentication, spController.getSelectDetailSp);
 router.get('/get-list-alamat', authentication, spController.getListAlamat);
 router.post('/create-SP', authentication, middlewareDriver.validate('createSp'), spController.createSp);
+router.post('/create-SP-vico', authentication, middlewareDriver.validate('createSp'), spController.createSp_vico);
+router.post('/create-SP-race', authentication, middlewareDriver.validate('createSp_race'), spController.createSp_race);
 router.post('/get-tarif-alamat', authentication, spController.getTarifAlamat);
 router.post('/ganti-alamat', authentication, spController.gantiAlamat);
 router.post('/edit-SP', authentication, spController.editSp);
+router.post('/edit-SP-vico', authentication, spController.editSp_vico);
+router.post('/edit-SP-race', authentication, spController.editSp_race);
 router.post('/create-SP-detail', authentication, spController.createDetailSp);
 router.post('/create-SP-detail-vico', authentication, spController.createDetailSp_vico);
+router.post('/create-SP-detail-race', authentication, spController.createDetailSp_race);
 // router.post('/create-SM-detail', authentication, spController.createDetailSM);
 router.post('/delete-SP-detail', authentication, spController.deleteDetailSp);
 router.post('/edit-SP-detail', authentication, spController.editSpDetail);
 router.post('/edit-SP-detail-vico', authentication, spController.editSpDetail_vico);
+router.post('/edit-SP-detail-race', authentication, spController.editSpDetail_race);
 router.get('/get-SP-sales', authentication, spController.getSpSales);
 router.get('/get-detail-sp', authentication, spController.getSpDetailSales);
+router.get('/get-detail-sp-race', authentication, spController.getSpDetailRace);
 router.post('/solved-issue', authentication, spController.solvedIssue);
 
 
@@ -27,6 +34,7 @@ router.get('/get-select-do', authentication, spController.getSelectCancelDo);
 router.post('/cancel-sp', authentication, spController.cancelDoSp);
 router.get('/get-massage-do-detail', authentication, spController.getMassageDoDetail);
 router.get('/get-list-cancel-do', authentication, spController.getCancelDoList);
+router.get('/get-all-massage-cost', authentication, spController.getAllMassageCost);
 
 router.post('/create-massage-do', authentication, spController.createDoMassage);
 router.post('/del-massage-do', authentication, spController.deleteDoMassage);
@@ -67,6 +75,7 @@ router.put('/update-sm-cost/:id_msm_cost', authentication, spController.updateSm
 router.delete('/delete-sm-cost/:id_msm_cost', authentication, spController.deleteSmCost);
 router.put('/approve-sm-cost/:id_msm_cost', authentication, spController.approveSmCost);
 router.put('/reject-sm-cost/:id_msm_cost', authentication, spController.rejectSmCost);
+router.get('/get-biaya-tambahan-sp-detail', authentication, spController.getBiayaTambahanSpDetail);
 router.get('/get-SP-detail-purch', authentication, spController.getDetailApprovePurch);
 router.get('/get-SP-detail-purch-idmp', authentication, spController.getDetailApprovePurchIDMP);
 router.post('/approve-SP-purch', authentication, spController.approvePurchasing);
@@ -85,6 +94,7 @@ router.get('/get-SP-all', authentication, spController.getSpListAll2);
 router.get('/export-sp-list-excel', authentication, spController.exportSpListExcel);
 router.get('/get-SP-all-approve', authentication, spController.getSpListApprove);
 router.get('/get-SP-all-detail-vico', authentication, spController.getSpListAllDetail_vico);
+router.post('/update-id-oddo', authentication, spController.updateIdOddo);
 router.get('/get-SP-all-detail', authentication, spController.getSpListAllDetail);
 
 router.get('/get-lost-sales', authentication, spController.getLostSales);

@@ -90,6 +90,11 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: ""
     },
+    id_produk: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
     foto: {
       type: DataTypes.TEXT,
       allowNull: true

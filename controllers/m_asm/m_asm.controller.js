@@ -14,38 +14,21 @@ exports.createAsm = async (req, res) => {
         });
 
         if (getUser) {
-            const { tahun, id_bu, nama_bu, nik_asm, kode_asm, nama_asm, wilayah_asm } = req.body;
+            const { tahun, id_bu, nama_bu, kode_asm, nama_asm, wilayah_asm } = req.body;
 
             // Validasi field wajib
-            if (!tahun || !id_bu || !nama_bu || !nik_asm) {
+            if (!tahun || !id_bu || !nama_bu) {
                 output = {
                     status: {
                         code: 400,
-                        message: 'Field tahun, id_bu, nama_bu, dan nik_asm wajib diisi'
+                        message: 'Field tahun, id_bu, dan nama_bu wajib diisi'
                     }
                 };
             } else {
-                // Cek apakah sudah ada dengan nik_asm yang sama
-                const existingAsm = await models.m_asm.findOne({
-                    where: {
-                        nik_asm: nik_asm,
-                        active: 'active'
-                    }
-                });
-
-                if (existingAsm) {
-                    output = {
-                        status: {
-                            code: 402,
-                            message: 'ASM dengan NIK tersebut sudah ada'
-                        }
-                    };
-                } else {
                     const createData = await models.m_asm.create({
                         tahun: tahun,
                         id_bu: id_bu,
                         nama_bu: nama_bu,
-                        nik_asm: nik_asm,
                         kode_asm: kode_asm || null,
                         nama_asm: nama_asm || null,
                         wilayah_asm: wilayah_asm || null,
@@ -61,7 +44,6 @@ exports.createAsm = async (req, res) => {
                             data: createData
                         };
                     }
-                }
             }
         }
     } catch (error) {
@@ -93,7 +75,7 @@ exports.editAsm = async (req, res) => {
         });
 
         if (getUser) {
-            const { id_asm, tahun, id_bu, nama_bu, nik_asm, kode_asm, nama_asm, wilayah_asm } = req.body;
+            const { id_asm, tahun, id_bu, nama_bu, kode_asm, nama_asm, wilayah_asm } = req.body;
 
             if (!id_asm) {
                 output = {
@@ -121,7 +103,6 @@ exports.editAsm = async (req, res) => {
                     if (tahun !== undefined) updateData.tahun = tahun;
                     if (id_bu !== undefined) updateData.id_bu = id_bu;
                     if (nama_bu !== undefined) updateData.nama_bu = nama_bu;
-                    if (nik_asm !== undefined) updateData.nik_asm = nik_asm;
                     if (kode_asm !== undefined) updateData.kode_asm = kode_asm;
                     if (nama_asm !== undefined) updateData.nama_asm = nama_asm;
                     if (wilayah_asm !== undefined) updateData.wilayah_asm = wilayah_asm;
@@ -273,7 +254,6 @@ exports.getAsmByBu = async (req, res) => {
                             tahun: item.tahun,
                             id_bu: item.id_bu,
                             nama_bu: item.nama_bu,
-                            nik_asm: item.nik_asm,
                             kode_asm: item.kode_asm,
                             nama_asm: item.nama_asm,
                             wilayah_asm: item.wilayah_asm,
@@ -361,7 +341,6 @@ exports.getAsmById = async (req, res) => {
                             tahun: getData.tahun,
                             id_bu: getData.id_bu,
                             nama_bu: getData.nama_bu,
-                            nik_asm: getData.nik_asm,
                             kode_asm: getData.kode_asm,
                             nama_asm: getData.nama_asm,
                             wilayah_asm: getData.wilayah_asm,

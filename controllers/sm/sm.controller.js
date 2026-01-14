@@ -594,9 +594,6 @@ exports.smDetail = async (req, res) => {
         models.m_sm.belongsTo(models.m_bu_brench, { targetKey: 'id_bu_brench', foreignKey: 'id_bu_brench' });
 
 
-        const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
-
-
         const getUser = await models.users.findOne(
             {
                 where: {
@@ -605,55 +602,64 @@ exports.smDetail = async (req, res) => {
             }
         )
         if (getUser) {
+            // Build where condition for detail endpoint - should return only 1 record
+            const whereCondition = {
+                is_deleted: 0
+            };
+
+            // Build Op.or condition only if at least one parameter is provided
+            const orConditions = [];
+            if (req.query.id_msm && req.query.id_msm !== '') {
+                orConditions.push({ id_msm: req.query.id_msm });
+            }
+            if (req.query.id_mpd && req.query.id_mpd !== '') {
+                orConditions.push({ id_mpd: req.query.id_mpd });
+            }
+
+            // Only add Op.or if we have at least one condition
+            if (orConditions.length > 0) {
+                whereCondition[Op.or] = orConditions;
+            } else {
+                // If no id_msm or id_mpd provided, return error
+                output = {
+                    status: {
+                        code: 400,
+                        message: 'id_msm or id_mpd parameter is required'
+                    }
+                };
+                const errorsFromMiddleware = await customErrorMiddleware(req);
+                if (!errorsFromMiddleware) {
+                    return res.status(output.status.code).send(output);
+                } else {
+                    return res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+                }
+            }
+
+            // Add optional filters (for detail endpoint, these are additional filters)
+            if (req.query.id_bu) {
+                whereCondition.id_bu = req.query.id_bu;
+            }
+            if (req.query.id_bu_brench) {
+                whereCondition.id_bu_brench = req.query.id_bu_brench;
+            }
+            if (req.query.kodeCabang) {
+                whereCondition.msm = { [Op.like]: `%${req.query.kodeCabang}%` };
+            }
+            if (req.query.mitra1) {
+                whereCondition.id_mitra_pickup = req.query.mitra1;
+            }
+            if (req.query.mitra2) {
+                whereCondition.id_mitra = req.query.mitra2;
+            }
+            if (req.query.mitra3) {
+                whereCondition.id_mitra_2 = req.query.mitra3;
+            }
+
             const getData = await models.m_sm.findAll(
                 {
                     order: [['id_msm', 'desc']],
-                    where: {
-                        [Op.or]: [
-                            {
-                                id_msm: req.query.id_msm,
-                            },
-
-                            {
-                                id_mpd: req.query.id_mpd,
-                            }
-                        ],
-
-                        is_deleted: 0,
-                        ...req.query.id_bu ? {
-                            id_bu: req.query.id_bu
-                        } : {},
-                        ...req.query.id_bu_brench ? {
-                            id_bu_brench: req.query.id_bu_brench
-
-                        } : {},
-                        ...req.query.kodeCabang ? {
-                            msm: { [Op.like]: `%${req.query.kodeCabang}%` }
-                        } : {},
-                        ...req.query.mitra1 ? {
-                            id_mitra_pickup: req.query.mitra1
-                        } : {},
-                        ...req.query.mitra2 ? {
-                            id_mitra: req.query.mitra2
-                        } : {},
-                        ...req.query.mitra3 ? {
-                            id_mitra_2: req.query.mitra3
-                        } : {},
-                        ...req.query.keyword ? {
-                            [Op.or]: [
-                                {
-                                    msm: {
-                                        [Op.like]: `%${req.query.keyword}%`
-                                    },
-
-                                },
-
-
-                            ]
-                        } : {}
-                    },
-                    limit: limit,
-                    offset: offset,
+                    where: whereCondition,
+                    limit: 1, // Detail endpoint should return only 1 record
                     include: [
                         {
                             model: models.m_bu
@@ -747,6 +753,22 @@ exports.smDetail = async (req, res) => {
             )
             // console.log("🚀 ~ file: sm.controller.js:732 ~ exports.smDetail= ~ getData:", getData[0].id_mpd)
 
+            // Check if data exists
+            if (!getData || getData.length === 0) {
+                output = {
+                    status: {
+                        code: 404,
+                        message: 'Data not found'
+                    }
+                };
+                const errorsFromMiddleware = await customErrorMiddleware(req);
+                if (!errorsFromMiddleware) {
+                    return res.status(output.status.code).send(output);
+                } else {
+                    return res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware);
+                }
+            }
+
             const getidPickup = await models.m_pengadaan_detail.findOne(
                 {
                     where: {
@@ -755,14 +777,14 @@ exports.smDetail = async (req, res) => {
                 }
             )
 
-            if (getData) {
-                const getAlamat = await models.alamat.findOne(
+            if (getData && getData.length > 0) {
+                const getAlamat = getidPickup ? await models.alamat.findOne(
                     {
                         where: {
                             id: getidPickup.id_almuat
                         }
                     }
-                )
+                ) : null;
 
                 const getSupirNumber1 = await models.m_driver.findOne(
                     {
@@ -811,7 +833,7 @@ exports.smDetail = async (req, res) => {
 
 
                 // let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
-                    const result = getData.map((item) => {
+                const result = getData.map((item) => {
 
 
                     return {
@@ -826,7 +848,7 @@ exports.smDetail = async (req, res) => {
                         pickupDate: core.moment(item.m_pengadaan_detail?.m_pengadaan?.tgl_pickup).format("YYYY-MM-DD"),
                         destination: (item.m_pengadaan_detail?.muat?.kota == null ? item.m_pengadaan_detail?.muat?.kota?.kotaMuat?.nama_kota : item.m_pengadaan_detail?.muat?.kota) + "-" + (item.m_pengadaan_detail?.bongkar?.kota == null ? item.m_pengadaan_detail?.bongkar?.kota?.kotaBongkar?.nama_kota : item.m_pengadaan_detail?.bongkar?.kota),
                         tglPickup: core.moment(item.tgl_muat).format("YYYY-MM-DD HH:mm:ss") == null ? "-" : core.moment(item.tgl_muat).format("YYYY-MM-DD HH:mm:ss"),
-                        pickupAddress: getAlamat.alamat,
+                        pickupAddress: getAlamat?.alamat || "-",
                         kapal: item.nama_kapal == null ? "-" : item.nama_kapal,
                         weight: item.m_pengadaan_detail == null ? "-" : item.m_pengadaan_detail.berat,
                         koli: item.m_pengadaan_detail == null ? "-" : item.m_pengadaan_detail.koli,
@@ -2986,10 +3008,18 @@ exports.createPO = async (req, res) => {
 }
 
 exports.getListPo = async (req, res) => {
+    let output = {};
     try {
-        models.m_po.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra' });
-        models.m_po.belongsTo(models.m_po_detail, { targetKey: 'id_mpo', foreignKey: 'id_mpo' });
+        // Setup associations
+        if (!models.m_po_detail.associations.m_po) {
+            models.m_po_detail.belongsTo(models.m_po, { targetKey: 'id_mpo', foreignKey: 'id_mpo' });
+        }
+        if (!models.m_po.associations.mitra) {
+            models.m_po.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra' });
+        }
+        
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
+        const { keyword } = req.query;
 
         const getUser = await models.users.findOne(
             {
@@ -2999,69 +3029,94 @@ exports.getListPo = async (req, res) => {
             }
         )
         if (getUser) {
-            const getData = await models.m_po.findAndCountAll(
+            // Build where condition for keyword search
+            const whereCondition = {};
+            const includeOptions = [
                 {
-                    order: [['id_mpo', 'desc']],
-                    where: {
-
-                    },
+                    model: models.m_po,
+                    required: true,
                     include: [
                         {
-                            model: models.mitra
+                            model: models.mitra,
+                            required: false
+                        }
+                    ]
+                }
+            ];
+
+            // Add keyword search to PO model if provided
+            if (keyword) {
+                includeOptions[0].where = {
+                    [Op.or]: [
+                        {
+                            mpo: {
+                                [Op.like]: `%${keyword}%`
+                            }
                         },
                         {
-                            model: models.m_po_detail
-                        },
-                    ],
+                            note: {
+                                [Op.like]: `%${keyword}%`
+                            }
+                        }
+                    ]
+                };
+            }
+
+            const getData = await models.m_po_detail.findAndCountAll(
+                {
+                    order: [['id_mpod', 'desc']],
+                    where: whereCondition,
+                    include: includeOptions,
+                    distinct: true,
                     limit: limit,
                     offset: offset
-
                 }
-
             )
             if (getData.rows) {
                 let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
                 const result = getData.rows.map((item) => {
+                    const po = item.m_po || {};
+                    const mitra = po.mitra || {};
 
                     return {
                         no: no++,
-                        idMpo: item.id_mpo,
-                        idMpod: item.m_po_detail.id_mpod,
-                        mpo: item.mpo,
-                        note: item.note,
-                        mitraId: item.id_mitra,
-                        mitra: item.mitra.nama_mitra,
-                        service: item.service,
-                        top: item.top,
-                        overtonase: item.top,
-                        biaya_kg: item.biaya_kg,
-                        biaya_overtonase: item.biaya_overtonase,
-                        biaya_multidrop: item.biaya_multidrop,
-                        biaya_muat: item.biaya_muat,
-                        biaya_bongkar_muat: item.biaya_bongkar_muat,
-                        biaya_inap: item.biaya_inap,
-                        biaya_lain: item.biaya_lain,
-                        total_keseluruhan: item.total_keseluruhan,
-                        tgl_kirim: item.tgl_kirim,
-                        via: item.via,
+                        idMpo: po.id_mpo,
+                        idMpod: item.id_mpod,
+                        mpo: po.mpo,
+                        note: po.note,
+                        mitraId: po.id_mitra,
+                        mitra: mitra.nama_mitra || '',
+                        service: po.service,
+                        top: po.top,
+                        overtonase: po.overtonase,
+                        biaya_kg: po.biaya_kg,
+                        biaya_overtonase: po.biaya_overtonase,
+                        biaya_multidrop: po.biaya_multidrop,
+                        biaya_muat: po.biaya_muat,
+                        biaya_bongkar_muat: po.biaya_bongkar_muat,
+                        biaya_inap: po.biaya_inap,
+                        biaya_lain: po.biaya_lain,
+                        total_keseluruhan: po.total_keseluruhan,
+                        tgl_kirim: po.tgl_kirim,
+                        via: po.via,
                         kendaraan: item.kendaraan,
                         kontainer: item.kontainer,
                         seal: item.seal,
                         nopol: item.nopol,
                         supir: item.supir,
                         telp: item.telp,
-                        memo: item.memo,
-                        tgl_po: item.tgl_po,
-                        status: item.status,
-                        approved: item.approved,
-                        app_user: item.app_user,
-                        app_date: item.app_date,
-                        app_act: item.app_act,
-                        app_user_act: item.app_user_act,
-                        app_date_act: item.app_date_act,
-                        tgl_update: item.tgl_update,
-                        status_sendmail: item.status_sendmail,
-                        date_sendmail: item.date_sendmail,
+                        memo: po.memo,
+                        tgl_po: po.tgl_po,
+                        status: po.status,
+                        approved: po.approved,
+                        app_user: po.app_user,
+                        app_date: po.app_date,
+                        app_act: po.app_act,
+                        app_user_act: po.app_user_act,
+                        app_date_act: po.app_date_act,
+                        tgl_update: po.tgl_update,
+                        status_sendmail: po.status_sendmail,
+                        date_sendmail: po.date_sendmail,
 
                     }
 
@@ -3434,76 +3489,535 @@ exports.getStatusApprovePurch = async (req, res) => {
     }
 }
 
+// exports.getListMsmOneMonthAgo = async (req, res) => {
+//   try {
+//     const models = core.models();
+//     const { Op } = require('sequelize');
+
+//     // Setup association untuk kendaraanstatus
+//     models.m_sm.hasMany(models.kendaraanstatus, { targetKey: 'id_msm', foreignKey: 'id_msm' });
+
+//     // Gunakan Date.now() untuk performa yang lebih baik
+//     const oneMonthAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+
+//     // Optimasi query dengan:
+//     // 1. Gunakan indeks yang tersedia (tgl_muat, status_pembatalan, is_deleted)
+//     // 2. Filter MSM yang bukan RC (race) di awal
+//     // 3. Filter MSM yang belum completed (tidak ada action = 19)
+//     // 4. Gunakan limit untuk membatasi jumlah data yang diambil
+//     const data = await models.m_sm.findAll({
+//       attributes: ['id_msm', 'msm'],
+//       include: [
+//         {
+//           model: models.kendaraanstatus,
+//           attributes: ['action'],
+//           required: false,
+//           where: {
+//             action: {
+//               [Op.ne]: 19 // Filter yang tidak memiliki action = 19 (completed)
+//             }
+//           }
+//         }
+//       ],
+//       where: {
+//         tgl_muat: {
+//           [Op.gte]: oneMonthAgo
+//         },
+//         msm: {
+//           [Op.and]: [
+//             { [Op.ne]: '' },
+//             { [Op.notLike]: 'RC%' } // Filter MSM yang bukan RC (race)
+//           ]
+//         },
+//         status_pembatalan: {
+//           [Op.ne]: 1
+//         },
+//         is_deleted: false
+//       },
+//       order: [['tgl_muat', 'DESC']]
+//     });
+
+//     // Filter tambahan untuk memastikan tidak ada yang completed
+//     const filteredData = data.filter(item => {
+//       // Jika tidak ada kendaraanstatus atau tidak ada yang action = 19 (completed)
+//       return !item.kendaraanstatuses || 
+//              !item.kendaraanstatuses.some(status => status.action === 19);
+//     });
+
+//     res.status(200).json({
+//       status: true,
+//       message: 'Berhasil mengambil daftar MSM 1 bulan terakhir yang belum completed (non-RC)',
+//       total: filteredData.length,
+//       data: filteredData.map(item => ({
+//         id_msm: item.id_msm,
+//         msm: item.msm
+//       })),
+//     });
+//   } catch (error) {
+//     console.error('Error getListMsmOneMonthAgo:', error);
+//     res.status(500).json({
+//       status: false,
+//       message: 'Gagal mengambil daftar MSM',
+//       error: error.message,
+//     });
+//   }
+// };
+
+// exports.getListMsmOneMonthAgo = async (req, res) => {
+//     try {
+//         const models = core.models();
+//         const { Op } = require('sequelize');
+
+//         // Setup association untuk kendaraanstatus
+//         models.m_sm.hasMany(models.kendaraanstatus, { targetKey: 'id_msm', foreignKey: 'id_msm' });
+
+//         // Gunakan Date.now() untuk performa yang lebih baik
+//         const threeMonthsAgo = new Date(Date.now() - (90 * 24 * 60 * 60 * 1000));
+
+//         // Optimasi query dengan:
+//         // 1. Gunakan indeks yang tersedia (tgl_muat, status_pembatalan, is_deleted)
+//         // 2. Filter MSM yang bukan RC (race) di awal
+//         // 3. Filter MSM yang belum completed (tidak ada action = 19)
+//         // 4. Gunakan limit untuk membatasi jumlah data yang diambil
+//         const data = await models.m_sm.findAll({
+//             attributes: ['id_msm', 'msm'],
+//             include: [
+//                 {
+//                     model: models.kendaraanstatus,
+//                     attributes: ['action'],
+//                     required: false,
+//                     where: {
+//                         action: {
+//                             [Op.ne]: 19 // Filter yang tidak memiliki action = 19 (completed)
+//                         }
+//                     }
+//                 }
+//             ],
+//             where: {
+//                 tgl_muat: {
+//                     [Op.gte]: threeMonthsAgo
+//                 },
+//                 msm: {
+//                     [Op.and]: [
+//                         { [Op.ne]: '' },
+//                         { [Op.notLike]: 'RC%' } // Filter MSM yang bukan RC (race)
+//                     ]
+//                 },
+//                 status_pembatalan: {
+//                     [Op.ne]: 1
+//                 },
+//                 is_deleted: false
+//             },
+//             order: [['tgl_muat', 'DESC']]
+//         });
+
+//         // Filter tambahan untuk memastikan tidak ada yang completed
+//         const filteredData = data.filter(item => {
+//             // Jika tidak ada kendaraanstatus atau tidak ada yang action = 19 (completed)
+//             return !item.kendaraanstatuses ||
+//                 !item.kendaraanstatuses.some(status => status.action === 19);
+//         });
+
+//         res.status(200).json({
+//             status: true,
+//             message: 'Berhasil mengambil daftar MSM 3 bulan terakhir yang belum completed (non-RC)',
+//             total: filteredData.length,
+//             data: filteredData.map(item => ({
+//                 id_msm: item.id_msm,
+//                 msm: item.msm
+//             })),
+//         });
+//     } catch (error) {
+//         console.error('Error getListMsmOneMonthAgo:', error);
+//         res.status(500).json({
+//             status: false,
+//             message: 'Gagal mengambil daftar MSM',
+//             error: error.message,
+//         });
+//     }
+// };
+
 exports.getListMsmOneMonthAgo = async (req, res) => {
-  try {
-    const models = core.models();
-    const { Op } = require('sequelize');
-    
-    // Setup association untuk kendaraanstatus
-    models.m_sm.hasMany(models.kendaraanstatus, { targetKey: 'id_msm', foreignKey: 'id_msm' });
-    
-    // Gunakan Date.now() untuk performa yang lebih baik
-    const oneMonthAgo = new Date(Date.now() - (30 * 24 * 60 * 60 * 1000));
+    try {
+        const models = core.models();
+        const { Op } = require('sequelize');
 
-    // Optimasi query dengan:
-    // 1. Gunakan indeks yang tersedia (tgl_muat, status_pembatalan, is_deleted)
-    // 2. Filter MSM yang bukan RC (race) di awal
-    // 3. Filter MSM yang belum completed (tidak ada action = 19)
-    // 4. Gunakan limit untuk membatasi jumlah data yang diambil
-    const data = await models.m_sm.findAll({
-      attributes: ['id_msm', 'msm'],
-      include: [
-        {
-          model: models.kendaraanstatus,
-          attributes: ['action'],
-          required: false,
-          where: {
-            action: {
-              [Op.ne]: 19 // Filter yang tidak memiliki action = 19 (completed)
-            }
-          }
-        }
-      ],
-      where: {
-        tgl_muat: {
-          [Op.gte]: oneMonthAgo
-        },
-        msm: {
-          [Op.and]: [
-            { [Op.ne]: '' },
-            { [Op.notLike]: 'RC%' } // Filter MSM yang bukan RC (race)
-          ]
-        },
-        status_pembatalan: {
-          [Op.ne]: 1
-        },
-        is_deleted: false
-      },
-      order: [['tgl_muat', 'DESC']]
-    });
+        // Setup association untuk kendaraanstatus
+        models.m_sm.hasMany(models.kendaraanstatus, { targetKey: 'id_msm', foreignKey: 'id_msm' });
 
-    // Filter tambahan untuk memastikan tidak ada yang completed
-    const filteredData = data.filter(item => {
-      // Jika tidak ada kendaraanstatus atau tidak ada yang action = 19 (completed)
-      return !item.kendaraanstatuses || 
-             !item.kendaraanstatuses.some(status => status.action === 19);
-    });
+        // Gunakan Date.now() untuk performa yang lebih baik
+        const threeMonthsAgo = new Date(Date.now() - (90 * 24 * 60 * 60 * 1000));
 
-    res.status(200).json({
-      status: true,
-      message: 'Berhasil mengambil daftar MSM 1 bulan terakhir yang belum completed (non-RC)',
-      total: filteredData.length,
-      data: filteredData.map(item => ({
-        id_msm: item.id_msm,
-        msm: item.msm
-      })),
-    });
-  } catch (error) {
-    console.error('Error getListMsmOneMonthAgo:', error);
-    res.status(500).json({
-      status: false,
-      message: 'Gagal mengambil daftar MSM',
-      error: error.message,
-    });
-  }
+        // Optimasi query dengan:
+        // 1. Gunakan indeks yang tersedia (tgl_muat, status_pembatalan, is_deleted)
+        // 2. Filter MSM yang bukan RC (race) di awal
+        // 3. Filter MSM yang belum completed (tidak ada action = 19)
+        // 4. Gunakan limit untuk membatasi jumlah data yang diambil
+        const data = await models.m_sm.findAll({
+            attributes: ['id_msm', 'msm'],
+            include: [
+                {
+                    model: models.kendaraanstatus,
+                    attributes: ['action'],
+                    required: false,
+                    where: {
+                        action: {
+                            [Op.ne]: 19 // Filter yang tidak memiliki action = 19 (completed)
+                        }
+                    }
+                }
+            ],
+            where: {
+                tgl_muat: {
+                    [Op.gte]: threeMonthsAgo
+                },
+                msm: {
+                    [Op.and]: [
+                        { [Op.ne]: '' },
+                        { [Op.notLike]: 'RC%' } // Filter MSM yang bukan RC (race)
+                    ]
+                },
+                status_pembatalan: {
+                    [Op.ne]: 1
+                },
+                is_deleted: false
+            },
+            order: [['tgl_muat', 'DESC']]
+        });
+
+        // Filter tambahan untuk memastikan tidak ada yang completed
+        const filteredData = data.filter(item => {
+            // Jika tidak ada kendaraanstatus atau tidak ada yang action = 19 (completed)
+            return !item.kendaraanstatuses ||
+                !item.kendaraanstatuses.some(status => status.action === 19);
+        });
+
+        res.status(200).json({
+            status: true,
+            message: 'Berhasil mengambil daftar MSM 3 bulan terakhir yang belum completed (non-RC)',
+            total: filteredData.length,
+            data: filteredData.map(item => ({
+                id_msm: item.id_msm,
+                msm: item.msm
+            })),
+        });
+    } catch (error) {
+        console.error('Error getListMsmOneMonthAgo:', error);
+        res.status(500).json({
+            status: false,
+            message: 'Gagal mengambil daftar MSM',
+            error: error.message,
+        });
+    }
 };
+
+// Get list BU dari table m_bu
+exports.getListBU = async (req, res) => {
+    try {
+        const getBu = await models.m_bu.findAll({
+            where: {
+                status: 1
+            },
+            order: [['id_bu', 'ASC']]
+        });
+
+        output = {
+            status: {
+                code: 200,
+                message: 'Success get Data BU'
+            },
+            data: getBu.map((i) => {
+                return {
+                    id: i.id,
+                    id_bu: i.id_bu,
+                    name_bu: i.name_bu,
+                    code_bu: i.code_bu,
+                    cbu: i.cbu,
+                    status: i.status
+                }
+            })
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+// Get list BU branch dengan filter id_bu dari table m_bu_brench
+exports.getListBuBranch = async (req, res) => {
+    try {
+        const whereCondition = {
+            status: 1
+        };
+
+        // Filter by id_bu jika ada di query parameter
+        if (req.query.id_bu) {
+            whereCondition.id_bu = req.query.id_bu;
+        }
+
+        const getBuBrench = await models.m_bu_brench.findAll({
+            where: whereCondition,
+            order: [['id_bu_brench', 'ASC']]
+        });
+
+        output = {
+            status: {
+                code: 200,
+                message: 'Success get Data BU Branch'
+            },
+            data: getBuBrench.map((i) => {
+                return {
+                    id: i.id,
+                    id_bu_brench: i.id_bu_brench,
+                    code_bu_brench: i.code_bu_brench,
+                    name_bu_brench: i.name_bu_brench,
+                    wilayah: i.wilayah,
+                    id_bu: i.id_bu,
+                    alamat: i.alamat,
+                    no_telp: i.no_telp,
+                    status: i.status
+                }
+            })
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+// Get list sales dengan filter id_bu dan id_bu_brench dari table m_sales
+exports.getListSales = async (req, res) => {
+    try {
+        const whereCondition = {};
+
+        // Filter by id_bu jika ada di query parameter
+        if (req.query.id_bu) {
+            whereCondition.id_bu = req.query.id_bu;
+        }
+
+        // Filter by id_bu_brench jika ada di query parameter
+        if (req.query.id_bu_brench) {
+            whereCondition.id_bu_brench = req.query.id_bu_brench;
+        }
+
+        // Filter by active status jika ada di query parameter
+        if (req.query.active) {
+            whereCondition.active = req.query.active;
+        } else {
+            // Default hanya ambil yang active jika tidak ada filter
+            whereCondition.active = 'active';
+        }
+
+        const getSales = await models.m_sales.findAll({
+            where: whereCondition,
+            order: [['id_sales', 'ASC']]
+        });
+
+        output = {
+            status: {
+                code: 200,
+                message: 'Success get Data Sales'
+            },
+            data: getSales.map((i) => {
+                return {
+                    id_sales: i.id_sales,
+                    tahun: i.tahun,
+                    id_bu: i.id_bu,
+                    nama_bu: i.nama_bu,
+                    id_bu_brench: i.id_bu_brench,
+                    nik_sales: i.nik_sales,
+                    nama_sales: i.nama_sales,
+                    wilayah_sales: i.wilayah_sales,
+                    kode_gl: i.kode_gl,
+                    nama_gl: i.nama_gl,
+                    wilayah_gl: i.wilayah_gl,
+                    kode_asm: i.kode_asm,
+                    nama_asm: i.nama_asm,
+                    wilayah_asm: i.wilayah_asm,
+                    kode_manager: i.kode_manager,
+                    nama_manager: i.nama_manager,
+                    wilayah_manager: i.wilayah_manager,
+                    kode_cabang: i.kode_cabang,
+                    nama_cabang: i.nama_cabang,
+                    wilayah_cabang: i.wilayah_cabang,
+                    active: i.active,
+                    created_at: i.created_at
+                }
+            })
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}
+
+// Get list customer dengan filter id_bu dari table customer
+exports.getListCustomer = async (req, res) => {
+    try {
+        const whereCondition = {
+            is_deleted: 0
+        };
+
+        // Filter by id_bu jika ada di query parameter
+        if (req.query.id_bu) {
+            whereCondition.id_bu = req.query.id_bu;
+        }
+
+        // Filter by status jika ada di query parameter
+        if (req.query.status !== undefined && req.query.status !== '') {
+            whereCondition.status = req.query.status;
+        }
+
+        const getCustomer = await models.customer.findAll({
+            where: whereCondition,
+            order: [['id_customer', 'ASC']]
+        });
+
+        output = {
+            status: {
+                code: 200,
+                message: 'Success get Data Customer'
+            },
+            data: getCustomer.map((i) => {
+                return {
+                    id_customer: i.id_customer,
+                    parent_id: i.parent_id,
+                    id_sales: i.id_sales,
+                    akun: i.akun,
+                    kode_customer: i.kode_customer,
+                    nama_perusahaan: i.nama_perusahaan,
+                    perusahaan: i.perusahaan,
+                    jenis_usaha: i.jenis_usaha,
+                    jenis_barang: i.jenis_barang,
+                    jenis_transaksi: i.jenis_transaksi,
+                    jenis_layanan: i.jenis_layanan,
+                    jenis_entitas: i.jenis_entitas,
+                    tgl_bediri: i.tgl_bediri,
+                    tahun_berdiri: i.tahun_berdiri,
+                    npwp: i.npwp,
+                    alamat_npwp: i.alamat_npwp,
+                    ktp: i.ktp,
+                    tdp: i.tdp,
+                    siup: i.siup,
+                    pkp: i.pkp,
+                    tax_pic: i.tax_pic,
+                    tax_position: i.tax_position,
+                    tax_phone_office: i.tax_phone_office,
+                    tax_mobile: i.tax_mobile,
+                    tax_email: i.tax_email,
+                    invoice_pic: i.invoice_pic,
+                    invoice_address: i.invoice_address,
+                    invoice_position: i.invoice_position,
+                    invoice_phone_office: i.invoice_phone_office,
+                    invoice_mobile: i.invoice_mobile,
+                    invoice_email: i.invoice_email,
+                    pic_office: i.pic_office,
+                    pic_position: i.pic_position,
+                    pic_phone: i.pic_phone,
+                    pic_number: i.pic_number,
+                    pic_fax: i.pic_fax,
+                    pic_email: i.pic_email,
+                    pic_birth: i.pic_birth,
+                    alamat_kantor: i.alamat_kantor,
+                    telepon: i.telepon,
+                    hp: i.hp,
+                    fax: i.fax,
+                    email: i.email,
+                    bank_pic: i.bank_pic,
+                    bank_position: i.bank_position,
+                    bank_phone_office: i.bank_phone_office,
+                    bank_mobile: i.bank_mobile,
+                    bank_email: i.bank_email,
+                    nama_bank: i.nama_bank,
+                    nama_akun: i.nama_akun,
+                    no_rek: i.no_rek,
+                    mata_uang: i.mata_uang,
+                    top: i.top,
+                    jenis_pembayaran: i.jenis_pembayaran,
+                    jenis_angkutan: i.jenis_angkutan,
+                    kemasan: i.kemasan,
+                    unique_cus: i.unique_cus,
+                    foto_kantor: i.foto_kantor,
+                    foto_pic: i.foto_pic,
+                    foto_ktp: i.foto_ktp,
+                    foto_npwp: i.foto_npwp,
+                    manager: i.manager,
+                    manager_memo: i.manager_memo,
+                    manager_date: i.manager_date,
+                    akunting: i.akunting,
+                    akunting_memo: i.akunting_memo,
+                    akunting_date: i.akunting_date,
+                    direktur: i.direktur,
+                    direktur_memo: i.direktur_memo,
+                    direktur_date: i.direktur_date,
+                    mou_file: i.mou_file,
+                    mou_number: i.mou_number,
+                    mou_expired: i.mou_expired,
+                    surat_pelayanan: i.surat_pelayanan,
+                    surat_pelayanan_number: i.surat_pelayanan_number,
+                    surat_pelayanan_expired: i.surat_pelayanan_expired,
+                    tgl_bergabung: i.tgl_bergabung,
+                    status: i.status,
+                    status_bp: i.status_bp,
+                    new: i.new,
+                    lat: i.lat,
+                    lon: i.lon,
+                    is_deleted: i.is_deleted,
+                    id_odoo: i.id_odoo,
+                    id_bu: i.id_bu
+                }
+            })
+        }
+    } catch (error) {
+        output = {
+            status: {
+                code: 500,
+                message: error.message
+            }
+        }
+    }
+
+    const errorsFromMiddleware = await customErrorMiddleware(req)
+
+    if (!errorsFromMiddleware) {
+        res.status(output.status.code).send(output)
+    } else {
+        res.status(errorsFromMiddleware.status.code).send(errorsFromMiddleware)
+    }
+}

@@ -17,7 +17,7 @@ module.exports = function(sequelize, DataTypes) {
       defaultValue: 0
     },
     no_sm: {
-      type: DataTypes.STRING(13),
+      type: DataTypes.STRING(25),
       allowNull: true
     },
     al_bongkar: {

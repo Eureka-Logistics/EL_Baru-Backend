@@ -37,6 +37,26 @@ module.exports = function(sequelize, DataTypes) {
       allowNull: false,
       defaultValue: 31
     },
+    id_bu: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
+    id_bu_branch: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
+    code_sales: {
+      type: DataTypes.STRING(6),
+      allowNull: true,
+      defaultValue: null
+    },
+    nama_sales: {
+      type: DataTypes.STRING(100),
+      allowNull: true,
+      defaultValue: null
+    },
     id_gl: {
       type: DataTypes.STRING(5),
       allowNull: true
@@ -277,6 +297,16 @@ module.exports = function(sequelize, DataTypes) {
       type: DataTypes.INTEGER,
       allowNull: true,
       defaultValue: null
+    },
+    id_oddo: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null
+    },
+    jenis_kiriman: {
+      type: DataTypes.ENUM('oncall', 'retail', 'dedicated', 'warehouse'),
+      allowNull: true,
+      defaultValue: 'oncall'
     }
   }, {
     sequelize,

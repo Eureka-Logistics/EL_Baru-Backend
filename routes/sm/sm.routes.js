@@ -33,6 +33,12 @@ router.post('/edit-po', authentication, smController.editPo);
 router.get('/get-status-approve-purch', authentication, smController.getStatusApprovePurch);
 router.get('/get-sm-one-month', smController.getListMsmOneMonthAgo);
 
+// BU, BU Branch, Sales, dan Customer endpoints
+router.get('/get-list-bu', authentication, smController.getListBU);
+router.get('/get-list-bu-branch', authentication, smController.getListBuBranch);
+router.get('/get-list-sales', authentication, smController.getListSales);
+router.get('/get-list-customer', authentication, smController.getListCustomer);
+
 
 
 

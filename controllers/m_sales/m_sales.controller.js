@@ -298,7 +298,7 @@ exports.getAllSales = async (req, res) => {
 
         if (getUser) {
             const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
-            const { tahun, active, id_bu, id_bu_brench } = req.query;
+            const { tahun, active, id_bu, id_bu_brench, keyword } = req.query;
 
             const whereCondition = {};
 
@@ -318,6 +318,24 @@ exports.getAllSales = async (req, res) => {
                 whereCondition.active = active;
             } else {
                 whereCondition.active = 'active'; // Default hanya yang active
+            }
+
+            // Keyword search - mencari di multiple fields
+            if (keyword) {
+                whereCondition[Op.or] = [
+                    { nik_sales: { [Op.like]: `%${keyword}%` } },
+                    { nama_sales: { [Op.like]: `%${keyword}%` } },
+                    { nama_bu: { [Op.like]: `%${keyword}%` } },
+                    { wilayah_sales: { [Op.like]: `%${keyword}%` } },
+                    { nama_gl: { [Op.like]: `%${keyword}%` } },
+                    { nama_asm: { [Op.like]: `%${keyword}%` } },
+                    { nama_manager: { [Op.like]: `%${keyword}%` } },
+                    { nama_cabang: { [Op.like]: `%${keyword}%` } },
+                    { kode_gl: { [Op.like]: `%${keyword}%` } },
+                    { kode_asm: { [Op.like]: `%${keyword}%` } },
+                    { kode_manager: { [Op.like]: `%${keyword}%` } },
+                    { kode_cabang: { [Op.like]: `%${keyword}%` } }
+                ];
             }
 
             const getData = await models.m_sales.findAndCountAll({

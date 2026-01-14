@@ -88,9 +88,33 @@ exports.getBU = async (req, res) => {
         if (getUser) {
             const getdata = await models.m_bu.findAndCountAll(
                 {
-                    // where: {
-                    //     status: "1"
-                    // },
+                    where: {
+                        // status: "1",
+                        ...req.query.keyword ? {
+                            [Op.or]: [
+                                {
+                                    id_bu: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    code_bu: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    cbu: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    name_bu: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                }
+                            ]
+                        } : {}
+                    },
                     limit: limit,
                     offset: offset
 
@@ -458,7 +482,31 @@ exports.getBuBranch = async (req, res) => {
             const getData = await models.m_bu_brench.findAndCountAll(
                 {
                     where: {
-                        status: 1
+                        status: 1,
+                        ...req.query.keyword ? {
+                            [Op.or]: [
+                                {
+                                    id_bu_brench: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    code_bu_brench: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    name_bu_brench: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                },
+                                {
+                                    alamat: {
+                                        [Op.like]: `%${req.query.keyword}%`
+                                    }
+                                }
+                            ]
+                        } : {}
                     },
                     limit: limit,
                     offset: offset

@@ -39,7 +39,9 @@ exports.login = async (req, res) => {
                     username: user.username,
                     fullname: user.nama_lengkap,
                     level: user.level,
-                    divisi: user.divisi
+                    divisi: user.divisi,
+                    id_bu: user.id_bu,
+                    id_bu_branch: user.id_bu_brench
                 };
 
                 const token = core.jwt.sign(payload, core.env.TOKEN_KEY, { expiresIn: "1d" });

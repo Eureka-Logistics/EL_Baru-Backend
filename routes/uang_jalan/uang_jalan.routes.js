@@ -2,6 +2,7 @@ var express = require('express');
 var router = express.Router();
 
 const uangJalanController = require('../../controllers/uang_jalan/uang_jalan.controller')
+const uangJalanNewController = require('../../controllers/uang_jalan/uang_jalan_new.controller')
 const authentication = require('../../middleware/private.middleware')
 
 const uangJalanmiddleware = require('../../middleware/uang_jalan.middleware')
@@ -16,5 +17,10 @@ router.post('/create-UangJalan-Transfer', authentication, uangJalanmiddleware.va
 
 router.put('/edit-UangJalan-Periode', authentication, uangJalanmiddleware.validate("edit-UangJalan-Periode"), uangJalanController.editUangJalanPeriode);
 
+// Uang Jalan New endpoints
+router.get('/new/get-list', authentication, uangJalanNewController.getUangJalanNewList);
+router.get('/new/get-detail', authentication, uangJalanNewController.getUangJalanNewDetail);
+router.post('/new/create', authentication, uangJalanNewController.createUangJalanNew);
+router.put('/new/edit', authentication, uangJalanNewController.editUangJalanNew);
 
 module.exports = router;
