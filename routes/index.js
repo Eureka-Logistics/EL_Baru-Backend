@@ -67,6 +67,7 @@ router.use('/quotation', require('./quotation/quotation.routes'));
 router.use('/quotation-detail', require('./quotation/quotation_detail.routes'));
 router.use('/po', require('./m_po/m_po.routes'));
 router.use('/po-detail', require('./m_po/m_po_detail.routes'));
+router.use('/msm', require('./m_sm/m_sm.routes'));
 
 
 module.exports = router;

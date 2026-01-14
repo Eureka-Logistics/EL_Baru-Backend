@@ -725,11 +725,14 @@ exports.getQuotationDetail = async (req, res) => {
                     }
                 };
             } else {
-                models.quotation.hasMany(models.quotation_detail, { 
-                    foreignKey: 'id_quotation', 
-                    sourceKey: 'id_quotation',
-                    as: 'quotation_details'
-                });
+                // Check if association already exists to avoid duplicate alias error
+                if (!models.quotation.associations.quotation_details) {
+                    models.quotation.hasMany(models.quotation_detail, { 
+                        foreignKey: 'id_quotation', 
+                        sourceKey: 'id_quotation',
+                        as: 'quotation_details'
+                    });
+                }
 
                 const getData = await models.quotation.findOne({
                     where: {

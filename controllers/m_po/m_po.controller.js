@@ -170,13 +170,13 @@ exports.createPo = async (req, res) => {
                     status: status || 'Y',
                     approved: 0,
                     app_user: 0,
-                    app_date: '0000-00-00 00:00:00',
+                    app_date: '1970-01-01 00:00:00',
                     app_act: 0,
                     app_user_act: 0,
-                    app_date_act: '0000-00-00 00:00:00',
+                    app_date_act: '1970-01-01 00:00:00',
                     tgl_update: core.moment(Date.now()).format('YYYY-MM-DD HH:mm:ss'),
                     status_sendmail: 0,
-                    date_sendmail: '0000-00-00 00:00:00'
+                    date_sendmail: '1970-01-01 00:00:00'
                 }, { transaction });
 
                 const id_mpo = createData.id_mpo;
@@ -549,11 +549,13 @@ exports.editPo = async (req, res) => {
                     await transaction.commit();
 
                     // Get updated PO with details
-                    models.m_po.hasMany(models.m_po_detail, { 
-                        foreignKey: 'id_mpo', 
-                        sourceKey: 'id_mpo',
-                        as: 'po_details'
-                    });
+                    if (!models.m_po.associations.po_details) {
+                        models.m_po.hasMany(models.m_po_detail, { 
+                            foreignKey: 'id_mpo', 
+                            sourceKey: 'id_mpo',
+                            as: 'po_details'
+                        });
+                    }
 
                     const updatedPo = await models.m_po.findOne({
                         where: {
@@ -805,11 +807,13 @@ exports.getPoDetail = async (req, res) => {
                     }
                 };
             } else {
-                models.m_po.hasMany(models.m_po_detail, { 
-                    foreignKey: 'id_mpo', 
-                    sourceKey: 'id_mpo',
-                    as: 'po_details'
-                });
+                if (!models.m_po.associations.po_details) {
+                    models.m_po.hasMany(models.m_po_detail, { 
+                        foreignKey: 'id_mpo', 
+                        sourceKey: 'id_mpo',
+                        as: 'po_details'
+                    });
+                }
 
                 const getData = await models.m_po.findOne({
                     where: {

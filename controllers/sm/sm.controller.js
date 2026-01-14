@@ -3008,10 +3008,18 @@ exports.createPO = async (req, res) => {
 }
 
 exports.getListPo = async (req, res) => {
+    let output = {};
     try {
-        models.m_po.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra' });
-        models.m_po.belongsTo(models.m_po_detail, { targetKey: 'id_mpo', foreignKey: 'id_mpo' });
+        // Setup associations
+        if (!models.m_po_detail.associations.m_po) {
+            models.m_po_detail.belongsTo(models.m_po, { targetKey: 'id_mpo', foreignKey: 'id_mpo' });
+        }
+        if (!models.m_po.associations.mitra) {
+            models.m_po.belongsTo(models.mitra, { targetKey: 'id_mitra', foreignKey: 'id_mitra' });
+        }
+        
         const { limit, offset } = core.getPagination(Number(req.query.limit), Number(req.query.page));
+        const { keyword } = req.query;
 
         const getUser = await models.users.findOne(
             {
@@ -3021,69 +3029,94 @@ exports.getListPo = async (req, res) => {
             }
         )
         if (getUser) {
-            const getData = await models.m_po.findAndCountAll(
+            // Build where condition for keyword search
+            const whereCondition = {};
+            const includeOptions = [
                 {
-                    order: [['id_mpo', 'desc']],
-                    where: {
-
-                    },
+                    model: models.m_po,
+                    required: true,
                     include: [
                         {
-                            model: models.mitra
+                            model: models.mitra,
+                            required: false
+                        }
+                    ]
+                }
+            ];
+
+            // Add keyword search to PO model if provided
+            if (keyword) {
+                includeOptions[0].where = {
+                    [Op.or]: [
+                        {
+                            mpo: {
+                                [Op.like]: `%${keyword}%`
+                            }
                         },
                         {
-                            model: models.m_po_detail
-                        },
-                    ],
+                            note: {
+                                [Op.like]: `%${keyword}%`
+                            }
+                        }
+                    ]
+                };
+            }
+
+            const getData = await models.m_po_detail.findAndCountAll(
+                {
+                    order: [['id_mpod', 'desc']],
+                    where: whereCondition,
+                    include: includeOptions,
+                    distinct: true,
                     limit: limit,
                     offset: offset
-
                 }
-
             )
             if (getData.rows) {
                 let no = (getData.count > 0) ? (req.query.page - 1) * req.query.limit + 1 : 0
                 const result = getData.rows.map((item) => {
+                    const po = item.m_po || {};
+                    const mitra = po.mitra || {};
 
                     return {
                         no: no++,
-                        idMpo: item.id_mpo,
-                        idMpod: item.m_po_detail.id_mpod,
-                        mpo: item.mpo,
-                        note: item.note,
-                        mitraId: item.id_mitra,
-                        mitra: item.mitra.nama_mitra,
-                        service: item.service,
-                        top: item.top,
-                        overtonase: item.top,
-                        biaya_kg: item.biaya_kg,
-                        biaya_overtonase: item.biaya_overtonase,
-                        biaya_multidrop: item.biaya_multidrop,
-                        biaya_muat: item.biaya_muat,
-                        biaya_bongkar_muat: item.biaya_bongkar_muat,
-                        biaya_inap: item.biaya_inap,
-                        biaya_lain: item.biaya_lain,
-                        total_keseluruhan: item.total_keseluruhan,
-                        tgl_kirim: item.tgl_kirim,
-                        via: item.via,
+                        idMpo: po.id_mpo,
+                        idMpod: item.id_mpod,
+                        mpo: po.mpo,
+                        note: po.note,
+                        mitraId: po.id_mitra,
+                        mitra: mitra.nama_mitra || '',
+                        service: po.service,
+                        top: po.top,
+                        overtonase: po.overtonase,
+                        biaya_kg: po.biaya_kg,
+                        biaya_overtonase: po.biaya_overtonase,
+                        biaya_multidrop: po.biaya_multidrop,
+                        biaya_muat: po.biaya_muat,
+                        biaya_bongkar_muat: po.biaya_bongkar_muat,
+                        biaya_inap: po.biaya_inap,
+                        biaya_lain: po.biaya_lain,
+                        total_keseluruhan: po.total_keseluruhan,
+                        tgl_kirim: po.tgl_kirim,
+                        via: po.via,
                         kendaraan: item.kendaraan,
                         kontainer: item.kontainer,
                         seal: item.seal,
                         nopol: item.nopol,
                         supir: item.supir,
                         telp: item.telp,
-                        memo: item.memo,
-                        tgl_po: item.tgl_po,
-                        status: item.status,
-                        approved: item.approved,
-                        app_user: item.app_user,
-                        app_date: item.app_date,
-                        app_act: item.app_act,
-                        app_user_act: item.app_user_act,
-                        app_date_act: item.app_date_act,
-                        tgl_update: item.tgl_update,
-                        status_sendmail: item.status_sendmail,
-                        date_sendmail: item.date_sendmail,
+                        memo: po.memo,
+                        tgl_po: po.tgl_po,
+                        status: po.status,
+                        approved: po.approved,
+                        app_user: po.app_user,
+                        app_date: po.app_date,
+                        app_act: po.app_act,
+                        app_user_act: po.app_user_act,
+                        app_date_act: po.app_date_act,
+                        tgl_update: po.tgl_update,
+                        status_sendmail: po.status_sendmail,
+                        date_sendmail: po.date_sendmail,
 
                     }
 

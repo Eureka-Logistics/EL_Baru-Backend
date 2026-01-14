@@ -8576,94 +8576,239 @@ exports.editSp_race = async (req, res) => {
                 }
             )
             if (getUser) {
-            const getSalesData = await models.users.findOne(
-                {
-                    where: {
-                        id: req.body.id_sales
-                    },
-                    include: [
-                        {
-                            model: models.m_bu_employee,
-                            as: 'm_bu_employee',
-                            required: false
+                const getSalesData = await models.users.findOne(
+                    {
+                        where: {
+                            id: req.body.id_sales
+                        },
+                        include: [
+                            {
+                                model: models.m_bu_employee,
+                                as: 'm_bu_employee',
+                                required: false
+                            }
+                        ]
+                    }
+                )
+
+                const getSalesDataM = await models.m_sales.findOne(
+                    {
+                        where: {
+                            id_sales: req.body.id_sales,
+                            active: 'active'
+                        },
+                        order: [['tahun', 'DESC']],
+                        limit: 1
+                    }
+                )
+
+                // Hitung subtotal dan total_keseluruhan dari PengadaanDetail
+                // subtotal = sum(harga * qty) dari array
+                let subtotal = 0;
+                let totalPajak = 0;
+                if (req.body.PengadaanDetail && Array.isArray(req.body.PengadaanDetail) && req.body.PengadaanDetail.length > 0) {
+                    req.body.PengadaanDetail.forEach((detail) => {
+                        const harga = detail.harga || 0;
+                        const qty = detail.qty || 0;
+                        const detailPajak = detail.pajak || 0;
+                        
+                        // subtotal = sum(harga * qty)
+                        const hargaQty = harga * qty;
+                        subtotal += hargaQty;
+                        
+                        // Hitung pajak dari detail (pajak adalah persentase)
+                        if (detailPajak > 0) {
+                            // Pajak adalah persentase (misalnya 1 = 1%)
+                            const pajakAmount = hargaQty * (detailPajak / 100);
+                            totalPajak += pajakAmount;
                         }
-                    ]
+                    });
                 }
-            )
+                // total_keseluruhan = subtotal + pajak
+                const totalKeseluruhan = Math.round(subtotal + totalPajak);
 
-            const getSalesDataM = getSalesData ? await models.m_sales.findOne(
-                {
-                    where: {
-                        nik_sales: getSalesData.id_karyawan.toString(),
-                        active: 'active'
-                    },
-                    order: [['tahun', 'DESC']],
-                    limit: 1
-                }
-            ) : null
+                // Helper function untuk update pengadaan detail
+                const updatePengadaanDetails = async (idMp, msp) => {
+                    if (req.body.PengadaanDetail && Array.isArray(req.body.PengadaanDetail) && req.body.PengadaanDetail.length > 0) {
+                        // Hapus detail lama (soft delete dengan is_deleted = 1)
+                        await models.m_pengadaan_detail.update(
+                            { is_deleted: 1 },
+                            {
+                                where: {
+                                    id_mp: idMp,
+                                    is_deleted: 0
+                                }
+                            }
+                        );
 
-            const updData = await models.m_pengadaan.update(
-                {
-                    memo: req.body.memo,
-                    id_sales: req.body.id_sales,
-                    id_bu: getUser.id_bu,
-                    id_bu_branch: getUser.id_bu_brench,
-                    code_sales: getSalesDataM ? getSalesDataM.nik_sales : null,
-                    nama_sales: getSalesDataM ? getSalesDataM.nama_sales : null,
-                    id_gl: getSalesDataM ? getSalesDataM.kode_gl : null,
-                    id_asm: getSalesDataM ? getSalesDataM.kode_asm : null,
-                    id_mgr: getSalesDataM ? getSalesDataM.kode_manager : null,
-                    id_kacab: getSalesDataM ? getSalesDataM.kode_cabang : null,
-                    id_customer: req.body.id_customer,
-                    alamat_invoice: req.body.alamat_invoice,
-                    service: req.body.service,
-                    jenis_barang: req.body.jenis_barang,
-                    packing: req.body.packing,
-                    asuransi: req.body.asuransi,
-                    asuransi_fee: req.body.asuransi_fee,
-                    tgl_pickup: core.moment(req.body.tgl_pickup).format("YYYY-MM-DD HH:MM:SS"),
-                    tgl_bongkar: core.moment(req.body.tgl_bongkar).format("YYYY-MM-DD HH:MM:SS"),
-                    waktu_muat: core.moment(req.body.tgl_pickup).format("HH:MM:SS"),
-                    waktu_bongkar: core.moment(req.body.tgl_bongkar).format("HH:MM:SS"),
-                    biaya_muat: req.body.biaya_muat,
-                    biaya_muat_bongkar: req.body.biaya_muat_bongkar,
-                    overtonase: req.body.overtonase,
-                    biaya_multi_drop: req.body.overtonase,
-                    biaya_lain: req.body.overtonase,
-                    diskon: req.body.diskon,
-                    total_keseluruhan: req.body.total_keseluruhan,
-                    jenis_kiriman: req.body.jenis_kiriman || 'oncall',
-                },
-                {
+                        // Buat detail baru
+                        const detailPromises = req.body.PengadaanDetail.map(async (detail) => {
+                            return await models.m_pengadaan_detail.create({
+                                'id_mp': idMp,
+                                'ph': msp,
+                                'no_sj': "",
+                                'do': "",
+                                'via': "darat",
+                                'shipment': 2,
+                                'id_unit': 0,
+                                'id_supir': 0,
+                                'kendaraan': "",
+                                'id_mitra': 0,
+                                'kendaraan_mitra': "",
+                                'id_almuat': 0,
+                                'id_albongkar': 0,
+                                'id_kota_muat': 0,
+                                'id_kota_bongkar': 0,
+                                'kota_muat': null,
+                                'kota_bongkar': null,
+                                'id_produk': detail.productId || null,
+                                'nama_barang': detail.deskripsi || "",
+                                'foto': null,
+                                'tgl_dropoff': core.moment(Date.now()).format('YYYY-MM-DD'),
+                                'waktu_dropoff': "00:00:00",
+                                'berat': 0,
+                                'qty': detail.qty || 0,
+                                'koli': detail.koli || 0,
+                                'km': 0,
+                                'ikat': 0,
+                                'volume': 0,
+                                'harga_net': 0,
+                                'diskon': 0,
+                                'harga_type': "",
+                                'harga': detail.harga || 0,
+                                'jumlah': detail.jumlah || 0,
+                                'total_produk': 0,
+                                'harga_muat': 0,
+                                'harga_bongkar': 0,
+                                'biaya_overtonase': 0,
+                                'biaya_multimuat': 0,
+                                'biaya_multidrop': 0,
+                                'biaya_mel': 0,
+                                'biaya_tambahan': 0,
+                                'biaya_lain': 0,
+                                'max_tonase': 0,
+                                'harga_selanjutnya': 0,
+                                'total': detail.jumlah || 0,
+                                'durasi_lelang': "00:00:00",
+                                'harga_lelang': 0,
+                                'id_price_customer': null,
+                                'keterangan': detail.deskripsi || null,
+                                'cod_amount': 0,
+                                'cod_input': null,
+                                'pajak': detail.pajak || null,
+                                'status': 0,
+                                'tgl_update': Date.now(),
+                                'tgl_lelang': 0,
+                                'end_lelang': 0,
+                                'is_deleted': 0
+                            });
+                        });
+                        await Promise.all(detailPromises);
+                    }
+                };
+
+                // Get existing SP data untuk mendapatkan msp
+                const getExistingSp = await models.m_pengadaan.findOne({
                     where: {
                         id_mp: req.body.id_mp
                     }
-                }
-            )
-            if (updData) {
-                const updStatMsg = await models.m_chat.create(
-                    {
-                        "id_mp": req.body.id_mp,
-                        "user": req.user.id,
-                        "ph": "",
-                        "tgl_chat": core.moment(Date.now()).format("YYYY-MM-DD HH:mm:ss"),
-                        "chat": req.user.fullname + " mengedit SP",
-                        "baca": "0"
+                });
 
-                    },
-
-                )
-                if (updStatMsg) {
+                if (!getExistingSp) {
                     output = {
                         status: {
-                            code: 200,
-                            message: "succes update data"
+                            code: 404,
+                            message: "SP tidak ditemukan"
+                        }
+                    };
+                } else {
+                    const tglOrder = req.body.tgl_order ? core.moment(req.body.tgl_order).format("YYYY-MM-DD HH:mm:ss") : getExistingSp.tgl_order;
+                    const tglPickup = req.body.tgl_pickup ? core.moment(req.body.tgl_pickup).format("YYYY-MM-DD HH:mm:ss") : getExistingSp.tgl_pickup;
+                    const tglBongkar = req.body.tgl_bongkar ? core.moment(req.body.tgl_bongkar).format("YYYY-MM-DD HH:mm:ss") : getExistingSp.tgl_bongkar;
+
+                    // Prepare update data
+                    const updateData = {
+                        memo: req.body.memo,
+                        id_sales: req.body.id_sales,
+                        id_bu: getUser.id_bu,
+                        id_bu_branch: getUser.id_bu_brench,
+                        code_sales: getSalesDataM ? getSalesDataM.nik_sales : null,
+                        nama_sales: getSalesDataM ? getSalesDataM.nama_sales : null,
+                        id_gl: getSalesDataM ? getSalesDataM.kode_gl : null,
+                        id_asm: getSalesDataM ? getSalesDataM.kode_asm : null,
+                        id_mgr: getSalesDataM ? getSalesDataM.kode_manager : null,
+                        id_kacab: getSalesDataM ? getSalesDataM.kode_cabang : null,
+                        id_amd: req.body.id_amd,
+                        id_customer: req.body.id_customer,
+                        alamat_invoice: req.body.alamat_invoice,
+                        service: req.body.service,
+                        jenis_barang: req.body.jenis_barang || "",
+                        packing: req.body.packing ? parseInt(req.body.packing) : 0,
+                        asuransi: req.body.asuransi || "N",
+                        asuransi_fee: req.body.asuransi_fee ? parseInt(req.body.asuransi_fee) : 0,
+                        tgl_pickup: tglPickup,
+                        tgl_bongkar: tglBongkar,
+                        waktu_muat: req.body.tgl_pickup ? core.moment(req.body.tgl_pickup).format("HH:mm:ss") : (req.body.tgl_order ? core.moment(req.body.tgl_order).format("HH:mm:ss") : getExistingSp.waktu_muat),
+                        waktu_bongkar: req.body.tgl_bongkar ? core.moment(req.body.tgl_bongkar).format("HH:mm:ss") : (req.body.tgl_order ? core.moment(req.body.tgl_order).format("HH:mm:ss") : getExistingSp.waktu_bongkar),
+                        biaya_muat: req.body.biaya_muat,
+                        biaya_muat_bongkar: req.body.biaya_muat_bongkar,
+                        overtonase: req.body.overtonase,
+                        biaya_multi_drop: req.body.overtonase,
+                        biaya_lain: req.body.overtonase,
+                        diskon: req.body.diskon || 0,
+                        tgl_order: tglOrder,
+                        jenis_kiriman: req.body.jenis_kiriman || 'oncall',
+                        is_multi: req.body.is_multi,
+                        is_tarif_multidrop: req.body.is_tarif_multidrop,
+                        tgl_update: Date.now()
+                    };
+
+                    // Hanya update subtotal, pajak, dan total_keseluruhan jika PengadaanDetail dikirim
+                    if (req.body.PengadaanDetail && Array.isArray(req.body.PengadaanDetail) && req.body.PengadaanDetail.length > 0) {
+                        updateData.subtotal = Math.round(subtotal);
+                        updateData.pajak = Math.round(totalPajak);
+                        updateData.total_keseluruhan = totalKeseluruhan;
+                    } else if (req.body.subtotal !== undefined || req.body.pajak !== undefined || req.body.total_keseluruhan !== undefined) {
+                        // Jika user mengirim subtotal/pajak/total_keseluruhan langsung tanpa detail
+                        if (req.body.subtotal !== undefined) updateData.subtotal = req.body.subtotal;
+                        if (req.body.pajak !== undefined) updateData.pajak = req.body.pajak;
+                        if (req.body.total_keseluruhan !== undefined) updateData.total_keseluruhan = req.body.total_keseluruhan;
+                    }
+
+                    const updData = await models.m_pengadaan.update(
+                        updateData,
+                        {
+                            where: {
+                                id_mp: req.body.id_mp
+                            }
+                        }
+                    )
+                    if (updData) {
+                        // Update detail pengadaan jika ada
+                        if (req.body.PengadaanDetail && Array.isArray(req.body.PengadaanDetail) && req.body.PengadaanDetail.length > 0) {
+                            await updatePengadaanDetails(req.body.id_mp, getExistingSp.msp);
+                        }
+
+                        const updStatMsg = await models.m_chat.create(
+                            {
+                                "id_mp": req.body.id_mp,
+                                "user": req.user.id,
+                                "ph": "",
+                                "tgl_chat": core.moment(Date.now()).format("YYYY-MM-DD HH:mm:ss"),
+                                "chat": req.user.fullname + " mengedit SP",
+                                "baca": "0"
+                            },
+                        )
+                        if (updStatMsg) {
+                            output = {
+                                status: {
+                                    code: 200,
+                                    message: "succes update data"
+                                }
+                            }
                         }
                     }
                 }
-
-            }
-
             }
         }
     } catch (error) {

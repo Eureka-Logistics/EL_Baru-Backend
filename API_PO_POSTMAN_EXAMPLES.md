@@ -2,9 +2,14 @@
 
 ## Base URL
 ```
-http://your-api-domain/api/po
-http://your-api-domain/api/po-detail
+http://your-api-domain/po
+http://your-api-domain/po-detail
 ```
+
+**Catatan:** 
+- Jika menggunakan reverse proxy dengan base path `/api`, maka URL menjadi `/api/po/create-po`
+- Jika langsung ke server tanpa base path, maka URL menjadi `/po/create-po`
+- Sesuaikan dengan konfigurasi server Anda
 
 ## Authentication
 Semua endpoint memerlukan authentication token di header:
@@ -18,7 +23,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 ### 1.1. CREATE PO
 **Method:** `POST`  
-**URL:** `/api/po/create-po`
+**URL:** `/po/create-po` (atau `/api/po/create-po` jika ada base path `/api`)
 
 **Payload:**
 ```json
@@ -85,7 +90,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 ### 1.2. EDIT PO
 **Method:** `POST`  
-**URL:** `/api/po/edit-po`
+**URL:** `/po/edit-po` (atau `/api/po/edit-po` jika ada base path `/api`)
 
 **Payload (Sama seperti CREATE, bisa langsung edit PO dan PO Detail sekaligus):**
 ```json
@@ -179,7 +184,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 ### 1.3. DELETE PO
 **Method:** `POST`  
-**URL:** `/api/po/delete-po`
+**URL:** `/po/delete-po` (atau `/api/po/delete-po` jika ada base path `/api`)
 
 **Payload:**
 ```json
@@ -192,7 +197,7 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 ### 1.4. GET PO LIST
 **Method:** `GET`  
-**URL:** `/api/po/get-po-list?limit=10&page=1&id_mitra=1&status=Y&keyword=PO`
+**URL:** `/po/get-po-list?limit=10&page=1&id_mitra=1&status=Y&keyword=PO` (atau `/api/po/get-po-list` jika ada base path `/api`)
 
 **Query Parameters:**
 - `limit` (required): Jumlah data per halaman, contoh: `10`
@@ -203,23 +208,23 @@ Authorization: Bearer YOUR_TOKEN_HERE
 
 **Contoh URL:**
 ```
-GET /api/po/get-po-list?limit=10&page=1
-GET /api/po/get-po-list?limit=10&page=1&id_mitra=1&status=Y
-GET /api/po/get-po-list?limit=10&page=1&keyword=11-PO
+GET /po/get-po-list?limit=10&page=1
+GET /po/get-po-list?limit=10&page=1&id_mitra=1&status=Y
+GET /po/get-po-list?limit=10&page=1&keyword=11-PO
 ```
 
 ---
 
 ### 1.5. GET PO DETAIL
 **Method:** `GET`  
-**URL:** `/api/po/get-po-detail?id_mpo=1`
+**URL:** `/po/get-po-detail?id_mpo=1` (atau `/api/po/get-po-detail` jika ada base path `/api`)
 
 **Query Parameters:**
 - `id_mpo` (required): ID PO
 
 **Contoh URL:**
 ```
-GET /api/po/get-po-detail?id_mpo=1
+GET /po/get-po-detail?id_mpo=1
 ```
 
 **Response:**
@@ -232,7 +237,7 @@ GET /api/po/get-po-detail?id_mpo=1
 
 ### 2.1. CREATE PO DETAIL
 **Method:** `POST`  
-**URL:** `/api/po-detail/create-po-detail`
+**URL:** `/po-detail/create-po-detail` (atau `/api/po-detail/create-po-detail` jika ada base path `/api`)
 
 **Payload:**
 ```json
@@ -268,7 +273,7 @@ GET /api/po/get-po-detail?id_mpo=1
 
 ### 2.2. EDIT PO DETAIL
 **Method:** `POST`  
-**URL:** `/api/po-detail/edit-po-detail`
+**URL:** `/po-detail/edit-po-detail` (atau `/api/po-detail/edit-po-detail` jika ada base path `/api`)
 
 **Payload:**
 ```json
@@ -306,7 +311,7 @@ GET /api/po/get-po-detail?id_mpo=1
 
 ### 2.3. DELETE PO DETAIL
 **Method:** `POST`  
-**URL:** `/api/po-detail/delete-po-detail`
+**URL:** `/po-detail/delete-po-detail` (atau `/api/po-detail/delete-po-detail` jika ada base path `/api`)
 
 **Payload:**
 ```json
@@ -319,7 +324,7 @@ GET /api/po/get-po-detail?id_mpo=1
 
 ### 2.4. GET PO DETAIL LIST
 **Method:** `GET`  
-**URL:** `/api/po-detail/get-po-detail-list?limit=10&page=1&id_mpo=1&id_msm=1&no_sm=SM-001`
+**URL:** `/po-detail/get-po-detail-list?limit=10&page=1&id_mpo=1&id_msm=1&no_sm=SM-001` (atau `/api/po-detail/get-po-detail-list` jika ada base path `/api`)
 
 **Query Parameters:**
 - `limit` (required): Jumlah data per halaman
@@ -339,7 +344,7 @@ GET /api/po-detail/get-po-detail-list?limit=10&page=1&id_mpo=1&id_msm=1
 
 ### 2.5. GET PO DETAIL BY ID
 **Method:** `GET`  
-**URL:** `/api/po-detail/get-po-detail-by-id?id_mpod=1`
+**URL:** `/po-detail/get-po-detail-by-id?id_mpod=1` (atau `/api/po-detail/get-po-detail-by-id` jika ada base path `/api`)
 
 **Query Parameters:**
 - `id_mpod` (required): ID PO Detail
